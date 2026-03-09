@@ -25,11 +25,13 @@ class UIController:
         
         self.visuals_enabled = True
         self.vis_timer_id = None
-        self.lufs_history = [] # For rolling average if needed
+        self.lufs_history = [] 
+        self.fft_history = None # For smoothing the spectrogram
         
         self.view.export_btn.config(command=self.export_master)
         self.view.load_btn.config(command=self.load_audio_file)
         self.view.toggle_vis_btn.config(command=self.toggle_visuals)
+        self.view.vis_btn.config(command=self.toggle_visual_mode)
         
         # Playback events
         self.view.play_btn.config(command=self.play_audio)
@@ -149,6 +151,14 @@ class UIController:
             if self.wet_audio is not None:
                 self.player.set_buffer(self.wet_audio, self.sample_rate)
 
+    def toggle_visual_mode(self):
+        if self.view.visual_mode == "FFT":
+            self.view.visual_mode = "WAVE"
+        else:
+            self.view.visual_mode = "FFT"
+        self.view.vis_btn.config(text=f"View: {self.view.visual_mode}")
+        self.view.vis_panel.delete("fft", "wave")
+
     def toggle_visuals(self):
         self.visuals_enabled = not self.visuals_enabled
         state_text = "ON" if self.visuals_enabled else "OFF"
@@ -221,6 +231,48 @@ class UIController:
                             self.view.vis_queue.put({'type': 'lufs', 'data': lufs})
                         except:
                             pass
+                
+                # --- LIVE SPECTROGRAM (FFT) ---
+                # We calculate the frequency spectrum of the currently audible signal
+                active_mono = wet_mono if (self.listen_mode == "B" and wet_mono is not None) else dry_mono
+                
+                if active_mono is not None and len(active_mono) > 512:
+                    try:
+                        # Use a Hanning window to prevent spectral leakage
+                        window = np.hanning(len(active_mono))
+                        windowed_audio = active_mono * window
+                        
+                        # Compute real-FFT and NORMALIZE by window length to avoid maxing out
+                        fft_vals = np.abs(np.fft.rfft(windowed_audio)) / (len(windowed_audio) / 2)
+                        
+                        # Downsample/Group bins into a logarithmic scale (Human hearing)
+                        num_ui_bars = 64
+                        log_bins = np.logspace(0, np.log10(len(fft_vals)-1), num_ui_bars + 1).astype(int)
+                        
+                        buckets = []
+                        for i in range(num_ui_bars):
+                            start, end = log_bins[i], log_bins[i+1]
+                            if end <= start: end = start + 1
+                            val = np.mean(fft_vals[start:end])
+                            buckets.append(val)
+                        
+                        buckets = np.array(buckets)
+                        
+                        # Professional Logarithmic amplitude scaling (-80dB floor)
+                        # This avoids the "Ceiling hitting" effect
+                        buckets = 20 * np.log10(buckets + 1e-10)
+                        buckets = (buckets + 80) / 80.0 # Map -80...0 to 0...1
+                        buckets = np.clip(buckets, 0.0, 1.0)
+                        
+                        # Smoothing (Exponential moving average)
+                        if self.fft_history is None or len(self.fft_history) != len(buckets):
+                            self.fft_history = buckets
+                        else:
+                            self.fft_history = 0.6 * self.fft_history + 0.4 * buckets
+                        
+                        self.view.vis_queue.put({'type': 'fft', 'data': (self.fft_history.tolist(), self.listen_mode)})
+                    except:
+                        pass
         except Exception as e:
             pass
             

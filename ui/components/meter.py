@@ -111,3 +111,35 @@ class LufsMeter(tk.Frame):
         self.meter.set_level(display_val)
         # Force the bar to be Cyan
         self.meter.itemconfig(self.meter.bar, fill="#00D2FF")
+
+class DbScale(tk.Canvas):
+    """
+    A static dB scale to provide reference markings next to the meters.
+    """
+    def __init__(self, parent, min_db=-60.0, max_db=0.0, height=180, width=30):
+        super().__init__(parent, width=width, height=height, bg=Colors.BG_PANEL, highlightthickness=0)
+        self.min_db = min_db
+        self.max_db = max_db
+        self.h = height
+        self.w = width
+        
+        self.draw_scale()
+        
+    def draw_scale(self):
+        # Professional dB markings
+        ticks = [0, -3, -6, -10, -14, -20, -30, -45, -60]
+        db_range = self.max_db - self.min_db
+        
+        for db in ticks:
+            if db < self.min_db: continue
+            
+            # Calculate Y position
+            ratio = (db - self.min_db) / db_range
+            y = self.h - (ratio * self.h)
+            
+            # Draw tick line
+            color = "#888888" if db < -1 else "#FF4444"
+            self.create_line(self.w - 10, y, self.w, y, fill=color)
+            
+            # Draw text
+            self.create_text(self.w - 15, y, text=str(db), fill=color, font=("Segoe UI", 8), anchor=tk.E)

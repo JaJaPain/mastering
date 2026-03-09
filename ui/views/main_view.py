@@ -3,7 +3,7 @@ from tkinter import ttk
 import queue
 import numpy as np
 from ui.theme import apply_dark_theme, Colors
-from ui.components.meter import LevelMeter, LufsMeter
+from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
 
 class MainView(tk.Tk):
@@ -21,6 +21,7 @@ class MainView(tk.Tk):
         apply_dark_theme(self)
         
         self.vis_queue = queue.Queue()
+        self.visual_mode = "FFT" # "WAVE" or "FFT"
         
         # Layout Frames
         self.create_header()
@@ -48,9 +49,15 @@ class MainView(tk.Tk):
         self.title_label = ttk.Label(header_frame, text="Mastering Console v1", style="Header.TLabel", font=("Segoe UI", 16, "bold"))
         self.title_label.pack(side=tk.RIGHT, padx=20, pady=15)
         
-        # Toggle Visuals Button
-        self.toggle_vis_btn = ttk.Button(header_frame, text="Vis: ON", style="TButton")
-        self.toggle_vis_btn.pack(side=tk.RIGHT, padx=10, pady=15)
+        # Visualizer Controls
+        header_right = ttk.Frame(header_frame, style="Header.TFrame")
+        header_right.pack(side=tk.RIGHT, padx=10, pady=15)
+
+        self.vis_btn = ttk.Button(header_right, text="View: FFT", width=10)
+        self.vis_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.toggle_vis_btn = ttk.Button(header_right, text="Vis: ON", width=8)
+        self.toggle_vis_btn.pack(side=tk.LEFT, padx=5)
         
     def create_main_content(self):
         # Frame holding everything below header
@@ -58,13 +65,26 @@ class MainView(tk.Tk):
         outer_frame.pack(fill=tk.BOTH, expand=True)
 
         # --- Top Panel: Visualizer ---
-        # Explicit pure-tk Canvas for native rendering
-        # 900 width roughly, 150 height.
-        self.vis_panel = tk.Canvas(outer_frame, height=150, bg=Colors.BG_PANEL, highlightthickness=0)
-        self.vis_panel.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(20, 10))
+        self.vis_panel = tk.Canvas(outer_frame, height=180, bg=Colors.BG_PANEL, highlightthickness=0)
+        self.vis_panel.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(15, 5))
         
-        # Draw center line
-        self.vis_panel.create_line(0, 75, 900, 75, fill="#444444", tags="grid")
+        # Draw Background Grid & dB Scale
+        # 0dB (Top), -20dB, -40dB, -60dB, -80dB (Bottom)
+        db_markings = [0, -20, -40, -60, -80]
+        for db in db_markings:
+            # Scale -80...0 to 0...180 (canvas height)
+            ratio = (db + 80) / 80.0
+            y = 180 - (ratio * 180)
+            
+            # Subtle grid line
+            color = "#333333" if db != 0 else "#444444"
+            self.vis_panel.create_line(0, y, 900, y, fill=color, tags="grid")
+            
+            # dB Text
+            self.vis_panel.create_text(8, y + 8, text=f"{db}dB", fill="#666666", font=("Segoe UI", 7), anchor=tk.W, tags="grid")
+            
+        # Overlay mode labels
+        self.vis_panel.create_text(30, 15, text="FFT", fill=Colors.ACCENT_LIGHT, font=("Segoe UI", 8, "bold"), tags="mode_indicator")
         
         content_frame = ttk.Frame(outer_frame, style="Main.TFrame")
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
@@ -168,7 +188,7 @@ class MainView(tk.Tk):
         
         
         # --- Right Panel: Metering ---
-        meter_panel = ttk.Frame(content_frame, style="Panel.TFrame", width=200)
+        meter_panel = ttk.Frame(content_frame, style="Panel.TFrame", width=280)
         meter_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
         meter_panel.pack_propagate(False)
         
@@ -180,18 +200,30 @@ class MainView(tk.Tk):
         # Left Channel Meter
         left_meter_frame = ttk.Frame(meters_frame, style="Panel.TFrame")
         left_meter_frame.pack(side=tk.LEFT, expand=True)
-        self.meter_l = LevelMeter(left_meter_frame)
+        self.meter_l = LevelMeter(left_meter_frame, height=180)
         self.meter_l.pack()
         ttk.Label(left_meter_frame, text="L", style="Panel.TLabel").pack(pady=5)
         
+        # dB Reference Scale (Static)
+        db_scale_frame = ttk.Frame(meters_frame, style="Panel.TFrame")
+        db_scale_frame.pack(side=tk.LEFT, pady=(0, 25)) # Align with meter height
+        self.db_scale = DbScale(db_scale_frame, height=180, width=35)
+        self.db_scale.pack()
+
         # LUFS Meter (Center)
         self.meter_lufs = LufsMeter(meters_frame, label="LOUDNESS")
         self.meter_lufs.pack(side=tk.LEFT, expand=True, padx=10)
 
+        # dB Reference Scale Right (Static)
+        db_scale_right_frame = ttk.Frame(meters_frame, style="Panel.TFrame")
+        db_scale_right_frame.pack(side=tk.LEFT, pady=(0, 25))
+        self.db_scale_r = DbScale(db_scale_right_frame, height=180, width=35)
+        self.db_scale_r.pack()
+
         # Right Channel Meter
         right_meter_frame = ttk.Frame(meters_frame, style="Panel.TFrame")
         right_meter_frame.pack(side=tk.LEFT, expand=True)
-        self.meter_r = LevelMeter(right_meter_frame)
+        self.meter_r = LevelMeter(right_meter_frame, height=180)
         self.meter_r.pack()
         ttk.Label(right_meter_frame, text="R", style="Panel.TLabel").pack(pady=5)
 
@@ -232,17 +264,27 @@ class MainView(tk.Tk):
             while not self.vis_queue.empty():
                 msg = self.vis_queue.get_nowait()
                 if msg['type'] == 'wave':
-                    self.draw_waveform(*msg['data'])
+                    if self.visual_mode == "WAVE":
+                        self.vis_panel.delete("fft") # Clear FFT if switching to wave
+                        self.draw_waveform(*msg['data'])
                 elif msg['type'] == 'meters':
                     rms_l, peak_l, rms_r, peak_r = msg['data']
                     self.meter_l.set_level(rms_l, peak_l)
                     self.meter_r.set_level(rms_r, peak_r)
                 elif msg['type'] == 'lufs':
                     self.meter_lufs.update_lufs(msg['data'])
+                elif msg['type'] == 'fft':
+                    if self.visual_mode == "FFT":
+                        self.vis_panel.delete("wave") # Clear wave if switching to FFT
+                        self.draw_fft(msg['data'])
                 elif msg['type'] == 'render_complete':
                     self.controller._on_render_complete(msg['data'])
                 elif msg['type'] == 'render_error':
                     self.controller._on_render_error(msg['data'])
+            
+            # Keep labels and grid in front of the visual data
+            self.vis_panel.tag_raise("grid")
+            self.vis_panel.tag_raise("mode_indicator")
         except Exception as e:
             pass
             
@@ -288,3 +330,37 @@ class MainView(tk.Tk):
             if len(coords_wet) > 4:
                 alpha_col = "#FFB300" if listen_mode == "B" else "#886600"
                 self.vis_panel.create_line(coords_wet, fill=alpha_col, width=2, tags="wave")
+
+    def draw_fft(self, fft_data):
+        if not hasattr(self, 'vis_panel') or not self.vis_panel.winfo_exists():
+            return
+            
+        w = self.vis_panel.winfo_width()
+        h = self.vis_panel.winfo_height()
+        if w < 10 or h < 10: return
+
+        self.vis_panel.delete("fft")
+        
+        # fft_data is a tuple of (freq_mags, listen_mode)
+        mags, mode = fft_data
+        if len(mags) == 0: return
+
+        # Draw a beautiful gradient spectrum
+        num_bars = len(mags)
+        bar_w = w / num_bars
+        
+        color = "#00D2FF" if mode == "B" else "#555555"
+        
+        points = [0, h]
+        for i, mag in enumerate(mags):
+            x = i * bar_w
+            # Magnitude is already somewhat normalized, but let's scale for UI
+            y = h - (mag * h * 0.85)
+            points.extend([x, y])
+        points.extend([w, h])
+
+        if len(points) > 4:
+            # We use multiple polygons with different outlines/fills for a "Glow" effect
+            self.vis_panel.create_polygon(points, fill="#003344", outline="", tags="fft")
+            # The top line is the bright part
+            self.vis_panel.create_line(points[2:-2], fill=color, width=2, tags="fft")
