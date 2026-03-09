@@ -25,6 +25,7 @@ class UIController:
         
         self.visuals_enabled = True
         self.vis_timer_id = None
+        self.lufs_history = [] # For rolling average if needed
         
         self.view.export_btn.config(command=self.export_master)
         self.view.load_btn.config(command=self.load_audio_file)
@@ -46,6 +47,7 @@ class UIController:
         self.refresh_presets()
         self.view.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
         self.view.save_preset_btn.config(command=self.on_save_preset)
+        self.view.match_btn.config(command=self.auto_match_loudness)
         
     def refresh_presets(self):
         names = preset_manager.get_preset_names()
@@ -162,6 +164,19 @@ class UIController:
                 
                 # Pipe cleanly padded array into thread queue
                 self.view.vis_queue.put({'type': 'wave', 'data': (dry_mono, wet_mono, self.listen_mode)})
+
+                # --- LUFS Real-Time Calculation ---
+                # We analyze the 'Wet' signal specifically as that's what we care about mastering!
+                # We need a 400ms window for Momentary LUFS.
+                window_size = int(self.sample_rate * 0.4)
+                if self.wet_audio is not None and frame > window_size:
+                    analysis_chunk = self.wet_audio[frame - window_size:frame]
+                    try:
+                        # pyloudnorm requires (Samples, Channels)
+                        lufs = self.processor.loudness_analyzer.analyze(analysis_chunk, self.sample_rate)
+                        self.view.vis_queue.put({'type': 'lufs', 'data': lufs})
+                    except:
+                        pass
         except Exception as e:
             pass
             
@@ -180,6 +195,9 @@ class UIController:
         if self.render_timer is not None:
             self.view.after_cancel(self.render_timer)
         self.render_timer = self.view.after(300, self.trigger_render)
+        
+        # Update LUFS Target Line on UI immediately
+        self.view.meter_lufs.meter.set_target(float(self.view.lufs_slider.get()))
         
     def trigger_render(self):
         if self.is_rendering or self.dry_audio is None:
@@ -297,6 +315,72 @@ class UIController:
             except Exception as e:
                 messagebox.showerror("Export Error", f"Failed to start export:\n{e}")
                 self.view.status_label.config(text="Export failed.")
+
+    def auto_match_loudness(self):
+        """
+        Background task to analyze the full song and adjust gain to hit target LUFS.
+        """
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Load an audio file first!")
+            return
+
+        target = float(self.view.lufs_slider.get())
+        self.view.status_label.config(text=f"Analyzing for {target} LUFS...")
+        self.view.match_btn.config(state="disabled")
+
+        def analysis_thread():
+            try:
+                # 1. Take current settings (Air, Drive)
+                params = {
+                    'air_gain_db': float(self.view.air_slider.get()),
+                    'drive_db': float(self.view.drive_slider.get()),
+                }
+                
+                # 2. Start from current gain
+                current_gain = float(self.view.gain_slider.get())
+                
+                # Simple iterative approach (max 3 passes for efficiency)
+                for i in range(3):
+                    # Process whole file temporarily
+                    audio = self.dry_audio
+                    params['input_gain_db'] = current_gain
+                    
+                    if audio.shape[1] == 1:
+                        test_output = self.processor.process(audio[:, 0], **params)
+                    else:
+                        proc_l = self.processor.process(audio[:, 0], **params)
+                        proc_r = self.processor.process(audio[:, 1], **params)
+                        test_output = np.vstack((proc_l, proc_r)).T
+                    
+                    # Analyze LUFS
+                    actual_lufs = self.processor.loudness_analyzer.analyze(test_output, self.sample_rate)
+                    diff = target - actual_lufs
+                    
+                    # If within 0.2dB, we're good
+                    if abs(diff) < 0.2:
+                        break
+                        
+                    # Adjust gain for next pass
+                    current_gain += diff
+                    # Clamp to slider limits
+                    current_gain = max(-24.0, min(12.0, current_gain))
+
+                # Update UI on main thread
+                def update_ui():
+                    self.view.gain_slider.set(current_gain)
+                    self.view.status_label.config(text=f"Matched to {actual_lufs:.1f} LUFS")
+                    self.view.match_btn.config(state="normal")
+                    self.trigger_render()
+                    messagebox.showinfo("Loudness Match", f"Gain adjusted to {current_gain:.1f} dB\nto hit {actual_lufs:.1f} LUFS.")
+
+                self.view.after(0, update_ui)
+
+            except Exception as e:
+                self.view.after(0, lambda: self.view.status_label.config(text="Match Error"))
+                self.view.after(0, lambda: self.view.match_btn.config(state="normal"))
+                self.view.after(0, lambda msg=str(e): messagebox.showerror("Error", f"Matching failed:\n{msg}"))
+
+        threading.Thread(target=analysis_thread, daemon=True).start()
 
     def run(self):
         self._sample_wave_loop() # Kick off visual loop safely

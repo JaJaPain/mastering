@@ -22,6 +22,10 @@ class LevelMeter(tk.Canvas):
         
         # Peak hold indicator
         self.peak_line = self.create_line(0, height, width, height, fill=Colors.TEXT_PRIMARY, width=2)
+
+        # Target Marker (Optional)
+        self.target_db = None
+        self.target_line = None
         
     def set_level(self, current_db: float, peak_db: float = None):
         """
@@ -61,3 +65,43 @@ class LevelMeter(tk.Canvas):
             peak_ratio = max(0.0, min(1.0, peak_ratio))
             peak_y_pos = self.meter_height - (peak_ratio * self.meter_height)
             self.coords(self.peak_line, 0, peak_y_pos, self.meter_width, peak_y_pos)
+
+    def set_target(self, target_db: float):
+        """Draws a static target line on the meter (e.g. -14 LUFS)."""
+        self.target_db = target_db
+        db_range = self.max_db - self.min_db
+        ratio = (target_db - self.min_db) / db_range
+        ratio = max(0.0, min(1.0, ratio))
+        y_pos = self.meter_height - (ratio * self.meter_height)
+        
+        if self.target_line:
+            self.delete(self.target_line)
+        
+        self.target_line = self.create_line(0, y_pos, self.meter_width, y_pos, fill="#FF00FF", width=2, dash=(4, 2))
+        self.create_text(self.meter_width/2, y_pos - 8, text="Spotify", fill="#FF00FF", font=("Segoe UI", 7, "bold"), tags="target_text")
+
+class LufsMeter(tk.Frame):
+    """
+    Dedicated LUFS meter with a text readout and a bar.
+    """
+    def __init__(self, parent, label="LUFS"):
+        super().__init__(parent, bg=Colors.BG_PANEL)
+        
+        ttk.Label(self, text=label, style="Panel.TLabel", font=("Segoe UI", 9, "bold")).pack()
+        
+        self.meter = LevelMeter(self, min_db=-36.0, max_db=0.0, width=30, height=180)
+        self.meter.pack(pady=5)
+        self.meter.set_target(-14.0) # Default Spotify target
+        
+        self.readout = ttk.Label(self, text="-inf", style="Panel.TLabel", font=("Consolas", 10, "bold"))
+        self.readout.pack()
+
+    def update_lufs(self, val: float):
+        if val == -np.inf:
+            txt = "-inf"
+        else:
+            txt = f"{val:.1f}"
+        self.readout.config(text=txt)
+        # We use a special color for LUFS: Cyan/Blue
+        self.meter.set_level(val)
+        self.meter.itemconfig(self.meter.bar, fill="#00D2FF")

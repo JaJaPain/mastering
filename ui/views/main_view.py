@@ -3,7 +3,7 @@ from tkinter import ttk
 import queue
 import numpy as np
 from ui.theme import apply_dark_theme, Colors
-from ui.components.meter import LevelMeter
+from ui.components.meter import LevelMeter, LufsMeter
 from ui.components.tooltip import ToolTip
 
 class MainView(tk.Tk):
@@ -132,7 +132,11 @@ class MainView(tk.Tk):
         ToolTip(lbl_lufs, "The final total loudness target for the exported master.\n-14 LUFS is the industry standard for Spotify/YouTube streaming.")
         self.lufs_slider = ttk.Scale(lufs_frame, from_=-24.0, to=-5.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
         self.lufs_slider.set(-14.0)
-        self.lufs_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        self.lufs_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
+
+        self.match_btn = ttk.Button(lufs_frame, text="Auto-Match", width=12)
+        self.match_btn.pack(side=tk.RIGHT)
+        ToolTip(self.match_btn, "Analyzes the whole song and automatically adjusts\nGain to hit your target LUFS exactly.")
         
         
         # --- Right Panel: Metering ---
@@ -152,9 +156,13 @@ class MainView(tk.Tk):
         self.meter_l.pack()
         ttk.Label(left_meter_frame, text="L", style="Panel.TLabel").pack(pady=5)
         
+        # LUFS Meter (Center)
+        self.meter_lufs = LufsMeter(meters_frame, label="LOUDNESS")
+        self.meter_lufs.pack(side=tk.LEFT, expand=True, padx=10)
+
         # Right Channel Meter
         right_meter_frame = ttk.Frame(meters_frame, style="Panel.TFrame")
-        right_meter_frame.pack(side=tk.RIGHT, expand=True)
+        right_meter_frame.pack(side=tk.LEFT, expand=True)
         self.meter_r = LevelMeter(right_meter_frame)
         self.meter_r.pack()
         ttk.Label(right_meter_frame, text="R", style="Panel.TLabel").pack(pady=5)
@@ -201,6 +209,8 @@ class MainView(tk.Tk):
                     rms_l, peak_l, rms_r, peak_r = msg['data']
                     self.meter_l.set_level(rms_l, peak_l)
                     self.meter_r.set_level(rms_r, peak_r)
+                elif msg['type'] == 'lufs':
+                    self.meter_lufs.update_lufs(msg['data'])
                 elif msg['type'] == 'render_complete':
                     self.controller._on_render_complete(msg['data'])
                 elif msg['type'] == 'render_error':

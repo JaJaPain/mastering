@@ -185,17 +185,29 @@ class LoudnessAnalyzer:
     """
     Standard-compliant LUFS meter using ITU-R BS.1770-4.
     """
-    def __init__(self, target_lufs: float = -14.0):
+    def __init__(self, target_lufs: float = -14.0, sample_rate: int = 44100):
         self.target_lufs = target_lufs
+        self.sample_rate = sample_rate
+        self._meter = pyln.Meter(sample_rate)
 
-    def analyze(self, audio_data: np.ndarray, sample_rate: int) -> float:
+    def analyze(self, audio_data: np.ndarray, sample_rate: int = None) -> float:
         """
-        Returns the Integrated LUFS of the audio.
+        Returns the LUFS of the audio.
         """
-        # Create a BS.1770 meter
-        meter = pyln.Meter(sample_rate)
-        # Calculate integrated loudness
-        return meter.integrated_loudness(audio_data)
+        if sample_rate and sample_rate != self.sample_rate:
+            self.sample_rate = sample_rate
+            self._meter = pyln.Meter(sample_rate)
+            
+        # pyloudnorm requires (samples, channels)
+        # If passed mono (samples,), reshape to (samples, 1)
+        if audio_data.ndim == 1:
+            audio_data = audio_data.reshape(-1, 1)
+            
+        # Integrated loudness calculation
+        try:
+            return self._meter.integrated_loudness(audio_data)
+        except:
+            return -np.inf
 
     def match_target_loudness(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
         """
