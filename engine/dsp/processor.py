@@ -24,20 +24,55 @@ class AudioProcessor:
             input_gain_linear = 10 ** (input_gain_db / 20.0)
             audio_data = audio_data * input_gain_linear
 
-        # 1. Linear Phase EQ
-        audio_data = self.linear_phase_eq(audio_data, air_gain_db)
+        # 1. M/S Encoding
+        # If stereo, split into Mid/Side
+        is_stereo = (audio_data.ndim > 1 and audio_data.shape[1] > 1)
+        if is_stereo:
+            L = audio_data[:, 0]
+            R = audio_data[:, 1]
+            
+            # Encode M/S with correct power compensation
+            mid = (L + R) / 1.414
+            side = (L - R) / 1.414
+            
+            # Reshape back to column vectors for scipy signals
+            mid = mid.reshape(-1, 1)
+            side = side.reshape(-1, 1)
 
-        # 2. Soft-Clipper
-        audio_data = self.soft_clip(audio_data, drive_db)
-        
-        # 3. Loudness Matching (LUFS target)
+            # 2. Targeted Processing
+            
+            # Linear Phase EQ (Air Shelf targeted strictly on the Side Channel for width)
+            # We keep the Mid channel 'flat' for EQ, just filtering out extreme sub rumble
+            mid = self.linear_phase_eq(mid, air_gain_db=0.0)
+            side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
+
+            # Soft-Clipper (Saturation driven hard on Mid for drum/vocal punch, lighter on Side)
+            # For the sides, we halve the drive DB to keep the stereo image clean
+            mid = self.soft_clip(mid, drive_db)
+            side = self.soft_clip(side, drive_db / 2.0)
+
+            # 3. M/S Decoding
+            # Recombining back into L/R with proper gain structure
+            dec_L = (mid + side) / 1.414
+            dec_R = (mid - side) / 1.414
+            
+            # Reconstruct the stereo array
+            audio_data = np.hstack((dec_L, dec_R))
+            
+        else:
+            # Mono fallback (just process the single channel normally without M/S)
+            audio_data = self.linear_phase_eq(audio_data, air_gain_db)
+            audio_data = self.soft_clip(audio_data, drive_db)
+            
+
+        # 4. Loudness Matching (LUFS target)
         if target_lufs is not None:
             self.loudness_analyzer.target_lufs = target_lufs
             # pyln requires (samples, channels) so we ensure correct shaped wrapper later, but process receives mono
             # We skip loudness inside real-time stereo buffer to save CPU cycle unless it's full render
             pass # Usually loudness is applied across full file, wait till export
 
-        # 4. True Peak Limiter
+        # 5. True Peak Limiter
         audio_data = self.limit(audio_data)
 
         return audio_data
