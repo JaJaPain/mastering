@@ -47,6 +47,8 @@ class UIController:
         self.view.drive_high_slider.config(command=self.on_slider_change)
         self.view.lufs_slider.config(command=self.on_slider_change)
         self.view.exciter_bypass_chk.config(command=self.on_slider_change)
+        self.view.mono_freq_slider.config(command=self.on_slider_change)
+        self.view.mono_bypass_chk.config(command=self.on_slider_change)
         
         # Presets Bindings
         self.refresh_presets()
@@ -79,6 +81,9 @@ class UIController:
                 self.view.drive_high_slider.set(legacy_drive * 0.5)
 
             self.view.exciter_bypass_var.set(preset_data.get("exciter_bypass", False))
+            self.view.mono_freq_slider.set(preset_data.get("mono_freq", 150.0))
+            self.view.mono_freq_val.config(text=f"{int(float(self.view.mono_freq_slider.get()))} Hz")
+            self.view.mono_bypass_var.set(preset_data.get("mono_bypass", False))
             self.view.lufs_slider.set(preset_data.get("target_lufs", preset_data.get("Target LUFS", -14.0)))
             self.trigger_render()
             
@@ -94,6 +99,8 @@ class UIController:
                 "drive_mid": float(self.view.drive_mid_slider.get()),
                 "drive_high": float(self.view.drive_high_slider.get()),
                 "exciter_bypass": self.view.exciter_bypass_var.get(),
+                "mono_freq": float(self.view.mono_freq_slider.get()),
+                "mono_bypass": self.view.mono_bypass_var.get(),
                 "input_gain": float(self.view.gain_slider.get()),
                 "description": "User Custom Preset"
             }
@@ -292,6 +299,10 @@ class UIController:
             self.view.after_cancel(self.render_timer)
         self.render_timer = self.view.after(300, self.trigger_render)
         
+        # Update Real-Time Readouts
+        m_freq = int(float(self.view.mono_freq_slider.get()))
+        self.view.mono_freq_val.config(text=f"{m_freq} Hz")
+        
         # Update LUFS Target Line on UI immediately
         self.view.meter_lufs.meter.set_target(float(self.view.lufs_slider.get()))
         
@@ -311,7 +322,9 @@ class UIController:
             'drive_low_db': float(self.view.drive_low_slider.get()),
             'drive_mid_db': float(self.view.drive_mid_slider.get()),
             'drive_high_db': float(self.view.drive_high_slider.get()),
-            'exciter_bypass': self.view.exciter_bypass_var.get()
+            'exciter_bypass': self.view.exciter_bypass_var.get(),
+            'mono_freq': float(self.view.mono_freq_slider.get()),
+            'mono_bypass': self.view.mono_bypass_var.get()
         }
         
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
@@ -392,6 +405,8 @@ class UIController:
                     'drive_mid_db': float(self.view.drive_mid_slider.get()),
                     'drive_high_db': float(self.view.drive_high_slider.get()),
                     'exciter_bypass': self.view.exciter_bypass_var.get(),
+                    'mono_freq': float(self.view.mono_freq_slider.get()),
+                    'mono_bypass': self.view.mono_bypass_var.get(),
                     'target_lufs': target_lufs
                 }
                 

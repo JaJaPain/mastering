@@ -16,7 +16,8 @@ class AudioProcessor:
 
     def process(self, audio_data: np.ndarray, input_gain_db: float = 0.0, air_gain_db: float = 2.0, 
                 drive_low_db: float = 0.0, drive_mid_db: float = 0.0, drive_high_db: float = 0.0,
-                target_lufs: float = None, exciter_bypass: bool = False) -> np.ndarray:
+                target_lufs: float = None, exciter_bypass: bool = False,
+                mono_freq: float = 150.0, mono_bypass: bool = False) -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -56,6 +57,10 @@ class AudioProcessor:
             if not exciter_bypass:
                 mid = self.multiband_drive(mid, drive_low_db, drive_mid_db, drive_high_db)
                 side = self.multiband_drive(side, drive_low_db/2.0, drive_mid_db/2.0, drive_high_db/2.0)
+
+            # Mono Maker (Specifically targets the Side channel to clear out low-end width)
+            if not mono_bypass:
+                side = self.mono_maker(side, mono_freq)
 
             # 3. M/S Decoding
             # Recombining back into L/R with proper gain structure
@@ -156,6 +161,19 @@ class AudioProcessor:
         
         # 4. Recombine
         return low_band + mid_band + high_band
+
+    def mono_maker(self, side_channel: np.ndarray, cutoff_freq: float) -> np.ndarray:
+        """
+        Removes all side energy below the cutoff frequency.
+        When M/S is decoded later, this effectively 'monos' the bass.
+        """
+        nyq = self.sample_rate / 2.0
+        # High-pass filter for the side channel (Zero-Phase Butterworth)
+        normalized_cutoff = max(20.0, min(1000.0, cutoff_freq)) / nyq
+        b, a = signal.butter(4, normalized_cutoff, btype='high')
+        
+        # We apply filtering strictly to the Side channel
+        return signal.filtfilt(b, a, side_channel, axis=0)
 
     def apply_saturation(self, data: np.ndarray, drive_db: float) -> np.ndarray:
         """Helper for band saturation."""

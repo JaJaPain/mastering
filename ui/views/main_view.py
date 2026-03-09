@@ -171,6 +171,30 @@ class MainView(tk.Tk):
         self.drive_high_slider.set(0.0)
         self.drive_high_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
+        # Mono Maker Section
+        mono_header = ttk.Frame(control_panel, style="Panel.TFrame")
+        mono_header.pack(fill=tk.X, padx=20, pady=(15, 5))
+        
+        ttk.Label(mono_header, text="Mono Maker (Tightens Bass)", style="Panel.TLabel", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
+        
+        self.mono_bypass_var = tk.BooleanVar(value=False)
+        self.mono_bypass_chk = ttk.Checkbutton(mono_header, text="Bypass", variable=self.mono_bypass_var)
+        self.mono_bypass_chk.pack(side=tk.RIGHT)
+
+        mono_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        mono_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        lbl_mono = ttk.Label(mono_frame, text="Mono Crossover (Hz)", style="Panel.TLabel", width=17)
+        lbl_mono.pack(side=tk.LEFT)
+        ToolTip(lbl_mono, "Frequencies below this point will be forced to Mono.\nUsually 120Hz-180Hz is best for a tight sound.")
+        
+        self.mono_freq_slider = ttk.Scale(mono_frame, from_=20.0, to=500.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.mono_freq_slider.set(150.0)
+        self.mono_freq_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
+
+        self.mono_freq_val = ttk.Label(mono_frame, text="150 Hz", style="Panel.TLabel", width=8)
+        self.mono_freq_val.pack(side=tk.RIGHT)
+
         # Target LUFS Slider
         lufs_frame = ttk.Frame(control_panel, style="Panel.TFrame")
         lufs_frame.pack(fill=tk.X, padx=20, pady=10)
