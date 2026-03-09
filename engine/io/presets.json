@@ -1,0 +1,144 @@
+{
+  "presets": {
+    "Modern Rock": {
+      "input_gain": 2.0,
+      "air_gain": 2.5,
+      "drive": 3.0,
+      "target_lufs": -9.0,
+      "description": "Aggressive and loud; punchy drums and forward guitars."
+    },
+    "Alt Metal / Emo": {
+      "input_gain": 1.5,
+      "air_gain": 2.0,
+      "drive": 2.0,
+      "target_lufs": -11.0,
+      "description": "Balanced energy with vocal shimmer; ideal for your current style."
+    },
+    "Acoustic / Introspective": {
+      "input_gain": 0.0,
+      "air_gain": 0.5,
+      "drive": 0.0,
+      "target_lufs": -14.0,
+      "description": "Transparent and dynamic; preserves the 'human' feel."
+    },
+    "Streaming Standard": {
+      "input_gain": 1.0,
+      "air_gain": 1.0,
+      "drive": 0.5,
+      "target_lufs": -14.0,
+      "description": "Safe, versatile setting for YouTube and Spotify."
+    },
+    "Heavy Metal / Djent": {
+      "input_gain": 3.0,
+      "air_gain": 1.5,
+      "drive": 4.5,
+      "target_lufs": -8.0,
+      "description": "Maximum density and saturation for wall-of-sound mixes."
+    },
+    "Pop / Radio": {
+      "input_gain": 1.5,
+      "air_gain": 3.0,
+      "drive": 1.5,
+      "target_lufs": -10.0,
+      "description": "Bright 'Air' and tight low-end for maximum accessibility."
+    },
+    "Hip-Hop / Trap": {
+      "input_gain": 2.5,
+      "air_gain": 1.0,
+      "drive": 3.5,
+      "target_lufs": -9.0,
+      "description": "Sub-bass focus with crisp percussion and vocal presence."
+    },
+    "Lo-Fi / Chill": {
+      "input_gain": -1.0,
+      "air_gain": -1.5,
+      "drive": 2.5,
+      "target_lufs": -15.0,
+      "description": "Warm saturation with rolled-off highs for a nostalgic vibe."
+    },
+    "EDM / Club": {
+      "input_gain": 3.5,
+      "air_gain": 2.5,
+      "drive": 4.0,
+      "target_lufs": -7.0,
+      "description": "Highest energy; optimized for club sound systems."
+    },
+    "Jazz / Fusion": {
+      "input_gain": 0.0,
+      "air_gain": 1.0,
+      "drive": 0.5,
+      "target_lufs": -16.0,
+      "description": "High dynamic range; preserves instrumental nuances."
+    },
+    "Classical / Orchestral": {
+      "input_gain": -2.0,
+      "air_gain": 0.0,
+      "drive": 0.0,
+      "target_lufs": -18.0,
+      "description": "Ultra-transparent; zero saturation to maintain natural timbre."
+    },
+    "Country / Americana": {
+      "input_gain": 1.0,
+      "air_gain": 1.5,
+      "drive": 1.0,
+      "target_lufs": -12.0,
+      "description": "Warm mids and clear vocals for storytelling tracks."
+    },
+    "Blues / Soul": {
+      "input_gain": 0.5,
+      "air_gain": 0.5,
+      "drive": 2.0,
+      "target_lufs": -13.0,
+      "description": "Rich harmonic saturation to mimic vintage analog tape."
+    },
+    "Podcast / Spoken Word": {
+      "input_gain": 1.5,
+      "air_gain": 2.0,
+      "drive": 0.5,
+      "target_lufs": -16.0,
+      "description": "Optimized for vocal clarity and consistent speech levels."
+    },
+    "Synthwave / 80s": {
+      "input_gain": 1.5,
+      "air_gain": 3.5,
+      "drive": 3.0,
+      "target_lufs": -11.0,
+      "description": "Extreme 'Air' boost and retro-style clipping."
+    },
+    "Punk / Grunge": {
+      "input_gain": 2.0,
+      "air_gain": 1.0,
+      "drive": 4.0,
+      "target_lufs": -10.0,
+      "description": "Raw, unpolished energy with aggressive soft-clipping."
+    },
+    "Cinematic / Trailer": {
+      "input_gain": 4.0,
+      "air_gain": 2.0,
+      "drive": 1.5,
+      "target_lufs": -8.0,
+      "description": "Huge dynamic shifts with a loud, impactful ceiling."
+    },
+    "Reggae / Dub": {
+      "input_gain": 2.0,
+      "air_gain": -0.5,
+      "drive": 2.0,
+      "target_lufs": -13.0,
+      "description": "Heavy low-end warmth with smooth, dark highs."
+    },
+    "Indie / Dream Pop": {
+      "input_gain": 0.5,
+      "air_gain": 2.0,
+      "drive": 1.5,
+      "target_lufs": -13.0,
+      "description": "Lush textures and airy vocals; moderate saturation."
+    },
+    "Extreme Loudness": {
+      "input_gain": 5.0,
+      "air_gain": 2.0,
+      "drive": 6.0,
+      "target_lufs": -6.0,
+      "description": "For competitive 'Loudness War' styles (use with caution)."
+    }
+  }
+}
