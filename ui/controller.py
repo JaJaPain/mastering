@@ -5,7 +5,7 @@ import numpy as np
 from tkinter import filedialog, messagebox
 from ui.views.main_view import MainView
 from engine.dsp.processor import AudioProcessor
-from engine.io.wav_io import read_wav, write_wav
+from engine.io.audio_io import read_audio, write_audio
 from engine.io.playback import AudioPlayer
 from engine.io import preset_manager
 
@@ -118,11 +118,8 @@ class UIController:
         )
         if file_path:
             try:
-                self.sample_rate, data = read_wav(file_path)
-                # Ensure audio is 2D for easier management
-                if data.ndim == 1:
-                    data = data.reshape(-1, 1)
-                    
+                self.sample_rate, data = read_audio(file_path)
+                # Soundfile always_2d ensures (samples, channels)
                 self.dry_audio = data
                 self.processor.sample_rate = self.sample_rate
                 self.loaded_file_path = file_path
@@ -331,26 +328,23 @@ class UIController:
         
     def _render_task(self, params):
         try:
-            audio = self.dry_audio
-            if audio.shape[1] == 1:
-                # Mono
-                processed = self.processor.process(audio[:, 0], **params)
-                processed_audio = processed.reshape(-1, 1)
-                
-                rms = self.processor.calculate_rms(processed)
-                peak = 20 * np.log10(max(np.max(np.abs(np.nan_to_num(processed))), 1e-10))
-                self.view.vis_queue.put({'type': 'meters', 'data': (rms, peak, rms, peak)})
+            # Processor now handles mono/stereo internally
+            processed_audio = self.processor.process(self.dry_audio, **params)
+            
+            # Extract metrics for meters from the processed buffer
+            # Handles (samples, channels)
+            if processed_audio.ndim > 1 and processed_audio.shape[1] > 1:
+                proc_l = processed_audio[:, 0]
+                proc_r = processed_audio[:, 1]
             else:
-                # Stereo
-                proc_l = self.processor.process(audio[:, 0], **params)
-                proc_r = self.processor.process(audio[:, 1], **params)
-                processed_audio = np.vstack((proc_l, proc_r)).T
-                
-                rms_l = self.processor.calculate_rms(proc_l)
-                rms_r = self.processor.calculate_rms(proc_r)
-                peak_l = 20 * np.log10(max(np.max(np.abs(np.nan_to_num(proc_l))), 1e-10))
-                peak_r = 20 * np.log10(max(np.max(np.abs(np.nan_to_num(proc_r))), 1e-10))
-                self.view.vis_queue.put({'type': 'meters', 'data': (rms_l, peak_l, rms_r, peak_r)})
+                proc_l = processed_audio.flatten()
+                proc_r = proc_l
+
+            rms_l = self.processor.calculate_rms(proc_l)
+            rms_r = self.processor.calculate_rms(proc_r)
+            peak_l = 20 * np.log10(max(np.max(np.abs(np.nan_to_num(proc_l))), 1e-10))
+            peak_r = 20 * np.log10(max(np.max(np.abs(np.nan_to_num(proc_r))), 1e-10))
+            self.view.vis_queue.put({'type': 'meters', 'data': (rms_l, peak_l, rms_r, peak_r)})
                 
             self.view.vis_queue.put({'type': 'render_complete', 'data': processed_audio})
         except Exception as e:
@@ -381,23 +375,35 @@ class UIController:
         # Need the final render with the Heavy Target LUFS calculation applied!
         self.view.status_label.config(text="Applying Target LUFS formatting...")
         
+        # --- Pick save path with extension based on format ---
+        fmt = self.view.format_combo.get().lower()
         orig_name = os.path.basename(self.loaded_file_path)
-        default_save = f"Mastered_{orig_name}"
+        # Strip old extension
+        name_no_ext = os.path.splitext(orig_name)[0]
+        default_save = f"Mastered_{name_no_ext}.{fmt}"
         
         save_path = filedialog.asksaveasfilename(
             title="Export Mastered File",
             initialfile=default_save,
-            defaultextension=".wav",
-            filetypes=(("WAV Files", "*.wav"), ("All Files", "*.*"))
+            defaultextension=f".{fmt}",
+            filetypes=((f"{fmt.upper()} Files", f"*.{fmt}"), ("All Files", "*.*"))
         )
         
         if save_path:
             try:
-                # Apply Final target LUFS on export only (heavy CPU)
-                target_lufs = float(self.view.lufs_slider.get())
+                # --- Define Export Characteristics ---
+                export_fmt = self.view.format_combo.get().upper()
+                depth_str = self.view.bit_depth_combo.get()
                 
-                # We need to run full render path with target lufs enabled so clipping happens cleanly after LUFS
-                # It's better to process the whole audio data to get precise file LUFS than frame by frame.
+                # Mapping of bitdepth to soundfile subtypes
+                subtype_map = {
+                    "16-bit": "PCM_16",
+                    "24-bit": "PCM_24",
+                    "32-bit float": "FLOAT"
+                }
+                subtype = subtype_map.get(depth_str, "PCM_24")
+
+                # Run full render path with target lufs enabled 
                 params = {
                     'input_gain_db': float(self.view.gain_slider.get()),
                     'air_gain_db': float(self.view.air_slider.get()),
@@ -407,22 +413,21 @@ class UIController:
                     'exciter_bypass': self.view.exciter_bypass_var.get(),
                     'mono_freq': float(self.view.mono_freq_slider.get()),
                     'mono_bypass': self.view.mono_bypass_var.get(),
-                    'target_lufs': target_lufs
+                    'target_lufs': float(self.view.lufs_slider.get())
                 }
                 
-                # Single background task for heavy export
+                # Double-check render (some apps like soundfile don't like 32-bit for MP3)
+                if export_fmt == 'MP3':
+                    subtype = None # soundfile will handle it or fail gracefully
+
                 def export_task():
                     try:
                         audio = self.dry_audio
-                        if audio.shape[1] == 1:
-                            final_audio = self.processor.process(audio[:, 0], **params).reshape(-1, 1)
-                        else:
-                            proc_l = self.processor.process(audio[:, 0], **params)
-                            proc_r = self.processor.process(audio[:, 1], **params)
-                            final_audio = np.vstack((proc_l, proc_r)).T
+                        # Processor handles mono vs stereo correctly inside
+                        final_audio = self.processor.process(audio, **params)
                             
-                        write_wav(save_path, self.sample_rate, final_audio)
-                        self.view.after(0, lambda: self.view.status_label.config(text=f"Exported to {save_path}"))
+                        write_audio(save_path, self.sample_rate, final_audio, format=export_fmt, subtype=subtype)
+                        self.view.after(0, lambda: self.view.status_label.config(text=f"Exported to {os.path.basename(save_path)}"))
                         self.view.after(0, lambda: messagebox.showinfo("Success", "Mastering Export Complete!"))
                     except Exception as err:
                         self.view.after(0, lambda e=err: messagebox.showerror("Export Error", f"Failed to save:\n{e}"))
@@ -461,16 +466,10 @@ class UIController:
                 
                 # Simple iterative approach (max 3 passes for efficiency)
                 for i in range(3):
-                    # Process whole file temporarily
-                    audio = self.dry_audio
                     params['input_gain_db'] = current_gain
                     
-                    if audio.shape[1] == 1:
-                        test_output = self.processor.process(audio[:, 0], **params)
-                    else:
-                        proc_l = self.processor.process(audio[:, 0], **params)
-                        proc_r = self.processor.process(audio[:, 1], **params)
-                        test_output = np.vstack((proc_l, proc_r)).T
+                    # Process directly (handles mono/stereo)
+                    test_output = self.processor.process(self.dry_audio, **params)
                     
                     # Analyze LUFS
                     actual_lufs = self.processor.loudness_analyzer.analyze(test_output, self.sample_rate)

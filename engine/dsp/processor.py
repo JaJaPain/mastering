@@ -80,9 +80,7 @@ class AudioProcessor:
         # 4. Loudness Matching (LUFS target)
         if target_lufs is not None:
             self.loudness_analyzer.target_lufs = target_lufs
-            # pyln requires (samples, channels) so we ensure correct shaped wrapper later, but process receives mono
-            # We skip loudness inside real-time stereo buffer to save CPU cycle unless it's full render
-            pass # Usually loudness is applied across full file, wait till export
+            audio_data = self.loudness_analyzer.match_target_loudness(audio_data, self.sample_rate)
 
         # 5. True Peak Limiter
         audio_data = self.limit(audio_data)

@@ -280,8 +280,26 @@ class MainView(tk.Tk):
         self.btn_b.pack(side=tk.LEFT, padx=(0, 20))
         
         # Right Side: Export Master
-        self.export_btn = ttk.Button(footer_frame, text="Export Master")
-        self.export_btn.pack(side=tk.RIGHT, padx=20, pady=15)
+        export_frame = ttk.Frame(footer_frame, style="Header.TFrame")
+        export_frame.pack(side=tk.RIGHT, padx=10, pady=10)
+        
+        # Quality dropdown
+        ttk.Label(export_frame, text="Bit-Depth:", style="Header.TLabel", font=("Segoe UI", 8)).pack(side=tk.TOP, pady=(0, 2))
+        self.bit_depth_combo = ttk.Combobox(export_frame, values=["16-bit", "24-bit", "32-bit float"], state="readonly", width=12, font=("Segoe UI", 8))
+        self.bit_depth_combo.set("24-bit")
+        self.bit_depth_combo.pack(side=tk.TOP)
+        ToolTip(self.bit_depth_combo, "Final audio resolution. \n24-bit is professional standard.\n32-bit float is lossless for further processing.")
+
+        export_right = ttk.Frame(footer_frame, style="Header.TFrame")
+        export_right.pack(side=tk.RIGHT, padx=(0, 20), pady=15)
+
+        self.format_combo = ttk.Combobox(export_right, values=["WAV", "FLAC", "MP3"], state="readonly", width=6, font=("Segoe UI", 10, "bold"))
+        self.format_combo.set("WAV")
+        self.format_combo.pack(side=tk.LEFT, padx=5)
+        ToolTip(self.format_combo, "Output Format:\nWAV: Lossless, uncompressed.\nFLAC: Lossless, compressed.\nMP3: Lossy, for sharing.")
+
+        self.export_btn = ttk.Button(export_right, text="Export Master", width=15)
+        self.export_btn.pack(side=tk.LEFT)
 
     def update_visualizer(self):
         try:
