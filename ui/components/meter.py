@@ -26,6 +26,7 @@ class LevelMeter(tk.Canvas):
         # Target Marker (Optional)
         self.target_db = None
         self.target_line = None
+        self.target_text_id = None # Store the ID specifically 
         
     def set_level(self, current_db: float, peak_db: float = None):
         """
@@ -76,9 +77,11 @@ class LevelMeter(tk.Canvas):
         
         if self.target_line:
             self.delete(self.target_line)
+        if self.target_text_id:
+            self.delete(self.target_text_id)
         
         self.target_line = self.create_line(0, y_pos, self.meter_width, y_pos, fill="#FF00FF", width=2, dash=(4, 2))
-        self.create_text(self.meter_width/2, y_pos - 8, text="Spotify", fill="#FF00FF", font=("Segoe UI", 7, "bold"), tags="target_text")
+        self.target_text_id = self.create_text(self.meter_width/2, y_pos - 8, text="Spotify", fill="#FF00FF", font=("Segoe UI", 7, "bold"))
 
 class LufsMeter(tk.Frame):
     """
@@ -89,19 +92,22 @@ class LufsMeter(tk.Frame):
         
         ttk.Label(self, text=label, style="Panel.TLabel", font=("Segoe UI", 9, "bold")).pack()
         
-        self.meter = LevelMeter(self, min_db=-36.0, max_db=0.0, width=30, height=180)
+        self.meter = LevelMeter(self, min_db=-60.0, max_db=0.0, width=30, height=180)
         self.meter.pack(pady=5)
         self.meter.set_target(-14.0) # Default Spotify target
         
-        self.readout = ttk.Label(self, text="-inf", style="Panel.TLabel", font=("Consolas", 10, "bold"))
+        self.readout = ttk.Label(self, text="-60.0", style="Panel.TLabel", font=("Consolas", 11, "bold"))
         self.readout.pack()
 
     def update_lufs(self, val: float):
-        if val == -np.inf:
+        # Enforce meter range for color logic
+        display_val = max(-60.0, val)
+        if display_val <= -60.0:
             txt = "-inf"
         else:
             txt = f"{val:.1f}"
-        self.readout.config(text=txt)
-        # We use a special color for LUFS: Cyan/Blue
-        self.meter.set_level(val)
+        
+        self.readout.config(text=txt, foreground="#00D2FF")
+        self.meter.set_level(display_val)
+        # Force the bar to be Cyan
         self.meter.itemconfig(self.meter.bar, fill="#00D2FF")

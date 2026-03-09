@@ -111,17 +111,45 @@ class MainView(tk.Tk):
         self.air_slider.set(2.0)
         self.air_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
-        # Clipper Drive Slider
-        drive_frame = ttk.Frame(control_panel, style="Panel.TFrame")
-        drive_frame.pack(fill=tk.X, padx=20, pady=10)
+        # Multi-Band Exciter Section
+        exciter_header = ttk.Frame(control_panel, style="Panel.TFrame")
+        exciter_header.pack(fill=tk.X, padx=20, pady=(10, 5))
         
-        lbl_drive = ttk.Label(drive_frame, text="Clipper Drive (dB)", style="Panel.TLabel", width=15)
-        lbl_drive.pack(side=tk.LEFT)
-        ToolTip(lbl_drive, "Drives the audio into an analog soft-clipper curve (np.tanh).\nIncreases perceived loudness and harmonic saturation smoothly.")
+        ttk.Label(exciter_header, text="Multi-Band Harmonic Exciter", style="Panel.TLabel", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
         
-        self.drive_slider = ttk.Scale(drive_frame, from_=0.0, to=24.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
-        self.drive_slider.set(0.0)
-        self.drive_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        self.exciter_bypass_var = tk.BooleanVar(value=False)
+        self.exciter_bypass_chk = ttk.Checkbutton(exciter_header, text="Bypass", variable=self.exciter_bypass_var)
+        self.exciter_bypass_chk.pack(side=tk.RIGHT)
+        
+        # Low Drive
+        low_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        low_frame.pack(fill=tk.X, padx=20, pady=5)
+        lbl_low = ttk.Label(low_frame, text="Low Drive (dB)", style="Panel.TLabel", width=15)
+        lbl_low.pack(side=tk.LEFT)
+        ToolTip(lbl_low, "Saturation for frequencies below 250Hz.\nAdds weight and 'growl' to the bass and kick.")
+        self.drive_low_slider = ttk.Scale(low_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.drive_low_slider.set(0.0)
+        self.drive_low_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+
+        # Mid Drive
+        mid_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        mid_frame.pack(fill=tk.X, padx=20, pady=5)
+        lbl_mid = ttk.Label(mid_frame, text="Mid Drive (dB)", style="Panel.TLabel", width=15)
+        lbl_mid.pack(side=tk.LEFT)
+        ToolTip(lbl_mid, "Saturation for 250Hz - 3kHz.\nAdds presence to vocals, guitars, and snare punch.")
+        self.drive_mid_slider = ttk.Scale(mid_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.drive_mid_slider.set(0.0)
+        self.drive_mid_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+
+        # High Drive
+        high_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        high_frame.pack(fill=tk.X, padx=20, pady=5)
+        lbl_high = ttk.Label(high_frame, text="High Drive (dB)", style="Panel.TLabel", width=15)
+        lbl_high.pack(side=tk.LEFT)
+        ToolTip(lbl_high, "Saturation for frequencies above 3kHz.\nAdds 'crunch' and high-end detail to hats and textures.")
+        self.drive_high_slider = ttk.Scale(high_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.drive_high_slider.set(0.0)
+        self.drive_high_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
         # Target LUFS Slider
         lufs_frame = ttk.Frame(control_panel, style="Panel.TFrame")

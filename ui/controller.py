@@ -40,8 +40,11 @@ class UIController:
         # Sliders: Trigger debounced render
         self.view.gain_slider.config(command=self.on_slider_change)
         self.view.air_slider.config(command=self.on_slider_change)
-        self.view.drive_slider.config(command=self.on_slider_change)
+        self.view.drive_low_slider.config(command=self.on_slider_change)
+        self.view.drive_mid_slider.config(command=self.on_slider_change)
+        self.view.drive_high_slider.config(command=self.on_slider_change)
         self.view.lufs_slider.config(command=self.on_slider_change)
+        self.view.exciter_bypass_chk.config(command=self.on_slider_change)
         
         # Presets Bindings
         self.refresh_presets()
@@ -60,7 +63,20 @@ class UIController:
             # Update sliders without triggering a storm of render events
             self.view.gain_slider.set(preset_data.get("input_gain", preset_data.get("Input Gain (dB)", 0.0)))
             self.view.air_slider.set(preset_data.get("air_gain", preset_data.get("Air Shelf (dB)", 2.0)))
-            self.view.drive_slider.set(preset_data.get("drive", preset_data.get("Clipper Drive (dB)", 0.0)))
+            
+            # Support both old single drive presets and new multiband ones
+            if "drive_mid" in preset_data or "Clipper Drive (dB)" in preset_data:
+                self.view.drive_low_slider.set(preset_data.get("drive_low", 0.0))
+                self.view.drive_mid_slider.set(preset_data.get("drive_mid", preset_data.get("Clipper Drive (dB)", 0.0)))
+                self.view.drive_high_slider.set(preset_data.get("drive_high", 0.0))
+            else:
+                # Default for legacy presets
+                legacy_drive = preset_data.get("drive", 0.0)
+                self.view.drive_low_slider.set(legacy_drive * 0.2)
+                self.view.drive_mid_slider.set(legacy_drive)
+                self.view.drive_high_slider.set(legacy_drive * 0.5)
+
+            self.view.exciter_bypass_var.set(preset_data.get("exciter_bypass", False))
             self.view.lufs_slider.set(preset_data.get("target_lufs", preset_data.get("Target LUFS", -14.0)))
             self.trigger_render()
             
@@ -72,7 +88,10 @@ class UIController:
             data = {
                 "target_lufs": float(self.view.lufs_slider.get()),
                 "air_gain": float(self.view.air_slider.get()),
-                "drive": float(self.view.drive_slider.get()),
+                "drive_low": float(self.view.drive_low_slider.get()),
+                "drive_mid": float(self.view.drive_mid_slider.get()),
+                "drive_high": float(self.view.drive_high_slider.get()),
+                "exciter_bypass": self.view.exciter_bypass_var.get(),
                 "input_gain": float(self.view.gain_slider.get()),
                 "description": "User Custom Preset"
             }
@@ -156,6 +175,7 @@ class UIController:
                 dry_mono = np.mean(dry_slice, axis=1) if dry_slice.shape[1] > 1 else dry_slice[:, 0]
                 dry_mono = np.nan_to_num(dry_mono, nan=0.0, posinf=0.0, neginf=0.0)
                 
+                wet_slice = None
                 wet_mono = None
                 if self.wet_audio is not None and len(self.wet_audio) > frame:
                     wet_slice = self.wet_audio[frame:frame+chunk_size]
@@ -165,18 +185,42 @@ class UIController:
                 # Pipe cleanly padded array into thread queue
                 self.view.vis_queue.put({'type': 'wave', 'data': (dry_mono, wet_mono, self.listen_mode)})
 
+                # --- LIVE PEAK METERS ---
+                # This makes the L/R meters dance while the music plays!
+                active_slice = wet_slice if (self.listen_mode == "B" and wet_slice is not None) else dry_slice
+                if active_slice is not None and len(active_slice) > 0:
+                    def get_metrics(chn):
+                        data = active_slice[:, chn] if active_slice.shape[1] > chn else active_slice
+                        rms = 20 * np.log10(np.sqrt(np.mean(np.square(data))) + 1e-10)
+                        peak = 20 * np.log10(np.max(np.abs(data)) + 1e-10)
+                        return rms, peak
+                    
+                    rlk, plk = get_metrics(0)
+                    rrk, prk = get_metrics(1 if active_slice.shape[1] > 1 else 0)
+                    self.view.vis_queue.put({'type': 'meters', 'data': (rlk, plk, rrk, prk)})
+
                 # --- LUFS Real-Time Calculation ---
-                # We analyze the 'Wet' signal specifically as that's what we care about mastering!
-                # We need a 400ms window for Momentary LUFS.
-                window_size = int(self.sample_rate * 0.4)
-                if self.wet_audio is not None and frame > window_size:
-                    analysis_chunk = self.wet_audio[frame - window_size:frame]
-                    try:
-                        # pyloudnorm requires (Samples, Channels)
-                        lufs = self.processor.loudness_analyzer.analyze(analysis_chunk, self.sample_rate)
-                        self.view.vis_queue.put({'type': 'lufs', 'data': lufs})
-                    except:
-                        pass
+                # We analyze the currently playing signal (A or B)
+                active_buffer = self.dry_audio if self.listen_mode == "A" else self.wet_audio
+                
+                window_size = int(self.sample_rate * 0.4) # 400ms momentary window
+                start_frame = max(0, frame - window_size)
+                
+                if active_buffer is not None:
+                    # We need at least some data to analyze
+                    end_idx = min(len(active_buffer), frame)
+                    start_idx = max(0, end_idx - window_size)
+                    
+                    if end_idx > start_idx:
+                        analysis_chunk = active_buffer[start_idx:end_idx]
+                        try:
+                            # 400ms Energy Integration
+                            energy = np.sqrt(np.mean(np.square(analysis_chunk)))
+                            # Convert to dBFS (LUFS approximation)
+                            lufs = 20 * np.log10(energy + 1e-10)
+                            self.view.vis_queue.put({'type': 'lufs', 'data': lufs})
+                        except:
+                            pass
         except Exception as e:
             pass
             
@@ -212,7 +256,10 @@ class UIController:
         params = {
             'input_gain_db': float(self.view.gain_slider.get()),
             'air_gain_db': float(self.view.air_slider.get()),
-            'drive_db': float(self.view.drive_slider.get())
+            'drive_low_db': float(self.view.drive_low_slider.get()),
+            'drive_mid_db': float(self.view.drive_mid_slider.get()),
+            'drive_high_db': float(self.view.drive_high_slider.get()),
+            'exciter_bypass': self.view.exciter_bypass_var.get()
         }
         
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
@@ -289,7 +336,10 @@ class UIController:
                 params = {
                     'input_gain_db': float(self.view.gain_slider.get()),
                     'air_gain_db': float(self.view.air_slider.get()),
-                    'drive_db': float(self.view.drive_slider.get()),
+                    'drive_low_db': float(self.view.drive_low_slider.get()),
+                    'drive_mid_db': float(self.view.drive_mid_slider.get()),
+                    'drive_high_db': float(self.view.drive_high_slider.get()),
+                    'exciter_bypass': self.view.exciter_bypass_var.get(),
                     'target_lufs': target_lufs
                 }
                 
@@ -333,7 +383,10 @@ class UIController:
                 # 1. Take current settings (Air, Drive)
                 params = {
                     'air_gain_db': float(self.view.air_slider.get()),
-                    'drive_db': float(self.view.drive_slider.get()),
+                    'drive_low_db': float(self.view.drive_low_slider.get()),
+                    'drive_mid_db': float(self.view.drive_mid_slider.get()),
+                    'drive_high_db': float(self.view.drive_high_slider.get()),
+                    'exciter_bypass': self.view.exciter_bypass_var.get(),
                 }
                 
                 # 2. Start from current gain

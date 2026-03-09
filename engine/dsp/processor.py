@@ -8,9 +8,15 @@ class AudioProcessor:
     """
     def __init__(self, sample_rate: int = 44100):
         self.sample_rate = sample_rate
-        self.loudness_analyzer = LoudnessAnalyzer()
+        self.loudness_analyzer = LoudnessAnalyzer(sample_rate=sample_rate)
+        
+        # Crossover Frequencies for Multi-Band Exciter
+        self.low_mid_freq = 250.0 # Bass to Mids
+        self.mid_high_freq = 3000.0 # Mids to Highs
 
-    def process(self, audio_data: np.ndarray, input_gain_db: float = 0.0, air_gain_db: float = 2.0, drive_db: float = 0.0, target_lufs: float = None) -> np.ndarray:
+    def process(self, audio_data: np.ndarray, input_gain_db: float = 0.0, air_gain_db: float = 2.0, 
+                drive_low_db: float = 0.0, drive_mid_db: float = 0.0, drive_high_db: float = 0.0,
+                target_lufs: float = None, exciter_bypass: bool = False) -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -46,10 +52,10 @@ class AudioProcessor:
             mid = self.linear_phase_eq(mid, air_gain_db=0.0)
             side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
 
-            # Soft-Clipper (Saturation driven hard on Mid for drum/vocal punch, lighter on Side)
-            # For the sides, we halve the drive DB to keep the stereo image clean
-            mid = self.soft_clip(mid, drive_db)
-            side = self.soft_clip(side, drive_db / 2.0)
+            # Multi-Band Harmonic Exciter (Saturation)
+            if not exciter_bypass:
+                mid = self.multiband_drive(mid, drive_low_db, drive_mid_db, drive_high_db)
+                side = self.multiband_drive(side, drive_low_db/2.0, drive_mid_db/2.0, drive_high_db/2.0)
 
             # 3. M/S Decoding
             # Recombining back into L/R with proper gain structure
@@ -60,9 +66,10 @@ class AudioProcessor:
             audio_data = np.hstack((dec_L, dec_R))
             
         else:
-            # Mono fallback (just process the single channel normally without M/S)
+            # Mono fallback
             audio_data = self.linear_phase_eq(audio_data, air_gain_db)
-            audio_data = self.soft_clip(audio_data, drive_db)
+            if not exciter_bypass:
+                audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db)
             
 
         # 4. Loudness Matching (LUFS target)
@@ -121,19 +128,42 @@ class AudioProcessor:
 
         return audio_data
 
-    def soft_clip(self, audio_data: np.ndarray, drive_db: float = 0.0) -> np.ndarray:
+    def multiband_drive(self, audio_data: np.ndarray, low_db: float, mid_db: float, high_db: float) -> np.ndarray:
         """
-        Soft-clipper using a tangent (tanh) function.
-        Avoids harsh digital clipping.
+        Splits audio into 3 bands and applies independent saturation.
+        Uses 4th order Linkwitz-Riley crossovers for perfectly flat summation.
         """
-        if drive_db != 0.0:
-            drive_linear = 10 ** (drive_db / 20.0)
-            audio_data = audio_data * drive_linear
-            
-        # Apply tanh for smooth saturation / soft clipping
-        clipped_data = np.tanh(audio_data)
+        nyq = self.sample_rate / 2.0
         
-        return clipped_data
+        # 1. Split into Low / (Mid+High)
+        lp_b, lp_a = signal.butter(4, self.low_mid_freq / nyq, btype='low')
+        hp_b, hp_a = signal.butter(4, self.low_mid_freq / nyq, btype='high')
+        
+        low_band = signal.filtfilt(lp_b, lp_a, audio_data, axis=0)
+        mid_high_temp = signal.filtfilt(hp_b, hp_a, audio_data, axis=0)
+        
+        # 2. Split (Mid+High) into Mid / High
+        lp_mid_b, lp_mid_a = signal.butter(4, self.mid_high_freq / nyq, btype='low')
+        hp_high_b, hp_high_a = signal.butter(4, self.mid_high_freq / nyq, btype='high')
+        
+        mid_band = signal.filtfilt(lp_mid_b, lp_mid_a, mid_high_temp, axis=0)
+        high_band = signal.filtfilt(hp_high_b, hp_high_a, mid_high_temp, axis=0)
+        
+        # 3. Apply Saturation to each band
+        low_band = self.apply_saturation(low_band, low_db)
+        mid_band = self.apply_saturation(mid_band, mid_db)
+        high_band = self.apply_saturation(high_band, high_db)
+        
+        # 4. Recombine
+        return low_band + mid_band + high_band
+
+    def apply_saturation(self, data: np.ndarray, drive_db: float) -> np.ndarray:
+        """Helper for band saturation."""
+        if drive_db <= 0.05: return data # Save CPU
+        
+        drive_linear = 10 ** (drive_db / 20.0)
+        # Apply tanh saturation with auto-gain compensation to keep perceived level steady
+        return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)
 
     def limit(self, audio_data: np.ndarray, ceiling_db: float = -1.0, lookahead_ms: float = 5.0) -> np.ndarray:
         """
@@ -203,6 +233,10 @@ class LoudnessAnalyzer:
         if audio_data.ndim == 1:
             audio_data = audio_data.reshape(-1, 1)
             
+        # Ensure we have enough data to analyze (at least 0.1s to be safe)
+        if len(audio_data) < int(self.sample_rate * 0.1):
+            return -np.inf
+
         # Integrated loudness calculation
         try:
             return self._meter.integrated_loudness(audio_data)
