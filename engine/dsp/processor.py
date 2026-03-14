@@ -18,7 +18,8 @@ class AudioProcessor:
                 drive_low_db: float = 0.0, drive_mid_db: float = 0.0, drive_high_db: float = 0.0,
                 target_lufs: float = None, exciter_bypass: bool = False,
                 mono_freq: float = 150.0, mono_bypass: bool = False,
-                stereo_width_db: float = 0.0, saturation_mode: str = "Soft Clip") -> np.ndarray:
+                stereo_width_db: float = 0.0, saturation_mode: str = "Soft Clip",
+                match_eq_fir: np.ndarray = None, match_amount: float = 1.0) -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -32,7 +33,11 @@ class AudioProcessor:
             input_gain_linear = 10 ** (input_gain_db / 20.0)
             audio_data = audio_data * input_gain_linear
 
-        # 1. M/S Encoding
+        # 1. Matching EQ (Pre-saturation/compression to shape the tone)
+        if match_eq_fir is not None and match_amount > 0.0:
+            audio_data = self.apply_matching_eq(audio_data, match_eq_fir, match_amount)
+
+        # 2. M/S Encoding
         # If stereo, split into Mid/Side
         is_stereo = (audio_data.ndim > 1 and audio_data.shape[1] > 1)
         if is_stereo:
@@ -205,6 +210,85 @@ class AudioProcessor:
         else:
             # Standard Soft Clip (tanh)
             return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)
+
+    def analyze_spectrum(self, audio_data: np.ndarray, nfft: int = 4096) -> np.ndarray:
+        """
+        Computes the average power spectrum of the audio using Welch's method.
+        Returns the power spectral density (PSD).
+        """
+        # Mix down to mono for spectral analysis
+        if audio_data.ndim > 1 and audio_data.shape[1] > 1:
+            data = np.mean(audio_data, axis=1)
+        else:
+            data = audio_data.flatten()
+            
+        freqs, psd = signal.welch(data, fs=self.sample_rate, nperseg=nfft)
+        return freqs, psd
+
+    def calculate_matching_fir(self, reference_audio: np.ndarray, target_audio: np.ndarray, num_taps: int = 511) -> np.ndarray:
+        """
+        Calculates a zero-phase FIR matching filter between two audio samples.
+        """
+        # Determine the number of FFT points
+        nfft = 4096
+        
+        # 1. Analyze spectrums
+        freqs, ref_psd = self.analyze_spectrum(reference_audio, nfft=nfft)
+        _, tgt_psd = self.analyze_spectrum(target_audio, nfft=nfft)
+        
+        # 2. Calculate the difference (matching curve) in linear amplitude
+        # Add epsilon to avoid division by zero
+        eps = 1e-10
+        mag_diff = np.sqrt((ref_psd + eps) / (tgt_psd + eps))
+        
+        # 3. Smooth the matching curve to prevent extreme resonances
+        # A simple moving average in the frequency domain
+        window_size = 15
+        mag_diff_smoothed = signal.medfilt(mag_diff, kernel_size=window_size)
+        
+        # 4. Design the FIR filter using firwin2
+        # firwin2 takes frequencies from 0 to Nyquist (0 to 1.0)
+        norm_freqs = freqs / (self.sample_rate / 2.0)
+        
+        # Ensure we start at 0 and end at 1.0 exactly
+        if norm_freqs[-1] < 1.0:
+            norm_freqs = np.append(norm_freqs, 1.0)
+            mag_diff_smoothed = np.append(mag_diff_smoothed, mag_diff_smoothed[-1])
+            
+        # Limit the gain to prevent massive blowouts (+12dB max)
+        max_gain_linear = 10 ** (12.0 / 20.0)
+        mag_diff_smoothed = np.clip(mag_diff_smoothed, 0.1, max_gain_linear)
+        
+        # Generate FIR coefficients
+        fir_coeff = signal.firwin2(num_taps, norm_freqs, mag_diff_smoothed)
+        return fir_coeff
+
+    def apply_matching_eq(self, audio_data: np.ndarray, fir_coeff: np.ndarray, mix: float = 1.0) -> np.ndarray:
+        """
+        Applies the matching EQ FIR filter using zero-phase filtering.
+        """
+        if mix <= 0.0: return audio_data
+        
+        # Zero-phase FIR application via filtfilt
+        # filtfilt applies the filter twice, so we take the square root of coefficients
+        # to maintain intended magnitude, or just apply it once with filtfilt logic.
+        # Actually, for Matching EQ, we'll use filtfilt and just accept the doubling
+        # or just use convolve if we want a single pass (minimum phase is harder).
+        # We'll use filtfilt for its perfect phase response.
+        
+        # Applying the blend by interpolating the FIR coefficients with an identity filter (a single spike)
+        identity = np.zeros_like(fir_coeff)
+        identity[len(identity)//2] = 1.0
+        
+        blended_fir = identity * (1.0 - mix) + fir_coeff * mix
+        
+        # Apply to each channel
+        if audio_data.ndim > 1 and audio_data.shape[1] > 1:
+            out_l = signal.filtfilt(blended_fir, [1.0], audio_data[:, 0], axis=0)
+            out_r = signal.filtfilt(blended_fir, [1.0], audio_data[:, 1], axis=0)
+            return np.vstack((out_l, out_r)).T
+        else:
+            return signal.filtfilt(blended_fir, [1.0], audio_data, axis=0)
 
     def limit(self, audio_data: np.ndarray, ceiling_db: float = -1.0, lookahead_ms: float = 5.0) -> np.ndarray:
         """

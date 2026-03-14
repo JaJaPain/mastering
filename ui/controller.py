@@ -24,6 +24,11 @@ class UIController:
         self.listen_mode = "A" # "A" = Dry, "B" = Wet
         self.render_timer = None
         self.is_rendering = False
+        self.match_fir_coeff = None
+        
+        # Player-ready caches (float32, contiguous) for zero-latency A/B switching
+        self.player_ready_dry = None
+        self.player_ready_wet = None
         
         self.visuals_enabled = True
         self.lufs_history = [] 
@@ -42,6 +47,7 @@ class UIController:
         self.view.gain_slider.config(command=self.on_slider_change)
         self.view.air_slider.config(command=self.on_slider_change)
         self.view.width_slider.config(command=self.on_slider_change)
+        self.view.match_amount_slider.config(command=self.on_slider_change)
         self.view.drive_low_slider.config(command=self.on_slider_change)
         self.view.drive_mid_slider.config(command=self.on_slider_change)
         self.view.drive_high_slider.config(command=self.on_slider_change)
@@ -58,6 +64,10 @@ class UIController:
         self.view.match_btn.config(command=self.auto_match_loudness, state="disabled")
         from ui.components.tooltip import ToolTip
         ToolTip(self.view.match_btn, "Please select a Genre Preset first\nto unlock Loudness Matching.")
+        
+        self.view.load_ref_btn.config(command=self.load_reference_track)
+        self.view.clear_ref_btn.config(command=self.clear_reference_track)
+        self.view.waveform_seeker.on_seek_callback = self.seek_audio
         
         
     def refresh_presets(self):
@@ -125,6 +135,84 @@ class UIController:
             else:
                 messagebox.showerror("Error", "Failed to save preset.")
                 
+    def load_reference_track(self):
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load your song first so we have something to match!")
+            return
+            
+        file_path = filedialog.askopenfilename(
+            title="Select Reference WAV File",
+            filetypes=(("WAV Files", "*.wav"), ("All Files", "*.*"))
+        )
+        if file_path:
+            self.view.status_label.config(text="Analyzing Reference Spectrum...")
+            self.view.load_ref_btn.config(state="disabled")
+            
+            def analyze_task():
+                try:
+                    sr, ref_data = read_audio(file_path)
+                    # Resample if needed would be complex, assume 44.1 for now or handle in processor
+                    # Processor handles basic spectral matching
+                    fir = self.processor.calculate_matching_fir(ref_data, self.dry_audio)
+                    
+                    def update_ui():
+                        self.match_fir_coeff = fir
+                        self.view.match_status_label.config(text=os.path.basename(file_path), foreground="#00D2FF")
+                        self.view.match_amount_slider.state(['!disabled'])
+                        if self.view.match_amount_slider.get() == 0:
+                            self.view.match_amount_slider.set(50.0) # Start with 50% match
+                        self.view.load_ref_btn.config(state="normal")
+                        self.view.status_label.config(text="Match Balanced")
+                        self.trigger_render()
+                        
+                    self.view.after(0, update_ui)
+                except Exception as e:
+                    self.view.after(0, lambda: messagebox.showerror("Analysis Error", f"Failed to analyze reference:\n{e}"))
+                    self.view.after(0, lambda: self.view.load_ref_btn.config(state="normal"))
+
+            threading.Thread(target=analyze_task, daemon=True).start()
+
+    def clear_reference_track(self):
+        self.match_fir_coeff = None
+        self.view.match_status_label.config(text="None Loaded", foreground="#CCCCCC")
+        self.view.match_amount_slider.set(0.0)
+        self.view.match_amount_slider.state(['disabled'])
+        self.trigger_render()
+
+    def seek_audio(self, progress):
+        if self.dry_audio is None:
+            return
+        total_frames = len(self.dry_audio)
+        target_frame = int(progress * total_frames)
+        self.player.current_frame = target_frame
+        self.view.waveform_seeker.set_progress(progress)
+
+    def _generate_waveform(self, audio_data):
+        # Downsample to ~200 points for the visualizer
+        n_points = 200
+        # If stereo, mix to mono first for speed
+        if audio_data.ndim > 1:
+            mono = np.mean(audio_data, axis=1)
+        else:
+            mono = audio_data.flatten()
+            
+        # Take max values in chunks
+        chunk_size = len(mono) // n_points
+        waveform = []
+        for i in range(n_points):
+            chunk = np.abs(mono[i*chunk_size : (i+1)*chunk_size])
+            if len(chunk) > 0:
+                waveform.append(float(np.max(chunk)))
+            else:
+                waveform.append(0.0)
+        
+        # Scale to 0.0 - 1.0 (with headroom)
+        max_val = np.max(waveform) if len(waveform) > 0 else 1.0
+        if max_val > 0.0:
+            waveform = [float(v / max_val) for v in waveform]
+            
+        self.view.waveform_seeker.set_waveform(waveform)
+
     def load_audio_file(self):
         file_path = filedialog.askopenfilename(
             title="Select WAV File",
@@ -139,6 +227,12 @@ class UIController:
                 self.loaded_file_path = file_path
                 self.view.file_label.config(text=os.path.basename(file_path))
                 
+                # Generate visual waveform
+                self._generate_waveform(data)
+                
+                # Pre-cache player-ready buffer
+                self.player_ready_dry = np.ascontiguousarray(data, dtype=np.float32)
+                
                 self.stop_audio()
                 self.set_listen_mode("A")
                 self.trigger_render() # Pre-render wet signal
@@ -148,8 +242,14 @@ class UIController:
     def play_audio(self):
         if self.dry_audio is None:
             return
-        buffer = self.dry_audio if self.listen_mode == "A" else (self.wet_audio if self.wet_audio is not None else self.dry_audio)
-        self.player.set_buffer(buffer, self.sample_rate)
+            
+        ready_buffer = self.player_ready_dry if self.listen_mode == "A" else self.player_ready_wet
+        
+        # Fallback if wet isn't ready yet but user wants to hear 'something'
+        if ready_buffer is None:
+            ready_buffer = self.player_ready_dry
+            
+        self.player.set_buffer(ready_buffer, self.sample_rate)
         if not self.player.is_playing:
             self.player.play()
             
@@ -161,13 +261,15 @@ class UIController:
         if mode == "A":
             self.view.btn_a.config(style="ActiveToggle.TButton")
             self.view.btn_b.config(style="TButton")
-            if self.dry_audio is not None:
-                self.player.set_buffer(self.dry_audio, self.sample_rate)
+            if self.player_ready_dry is not None:
+                self.player.set_buffer(self.player_ready_dry, self.sample_rate)
         else:
             self.view.btn_a.config(style="TButton")
             self.view.btn_b.config(style="ActiveToggle.TButton")
-            if self.wet_audio is not None:
-                self.player.set_buffer(self.wet_audio, self.sample_rate)
+            if self.player_ready_wet is not None:
+                self.player.set_buffer(self.player_ready_wet, self.sample_rate)
+            elif self.player_ready_dry is not None:
+                self.player.set_buffer(self.player_ready_dry, self.sample_rate)
 
                 
     def _sample_wave_loop(self):
@@ -180,8 +282,8 @@ class UIController:
                 frame = self.player.current_frame
                 
                 # Pipe cleanly padded array into thread queue
-                # Waveform is removed as per user request (Mastering Only)
-                pass
+                progress = frame / len(self.dry_audio)
+                self.view.vis_queue.put({'type': 'progress', 'data': progress})
 
                 # --- LIVE PEAK METERS ---
                 # This makes the L/R meters dance while the music plays!
@@ -270,7 +372,9 @@ class UIController:
             'exciter_bypass': self.view.exciter_bypass_var.get(),
             'saturation_mode': self.view.sat_mode_combo.get(),
             'mono_freq': float(self.view.mono_freq_slider.get()),
-            'mono_bypass': self.view.mono_bypass_var.get()
+            'mono_bypass': self.view.mono_bypass_var.get(),
+            'match_eq_fir': self.match_fir_coeff,
+            'match_amount': float(self.view.match_amount_slider.get()) / 100.0
         }
         
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
@@ -305,12 +409,14 @@ class UIController:
         
     def _on_render_complete(self, processed_audio):
         self.wet_audio = processed_audio
+        self.player_ready_wet = np.ascontiguousarray(processed_audio, dtype=np.float32)
+        
         self.is_rendering = False
         self.view.status_label.config(text="Preview Ready")
         
         # If currently listening to B (Wet), hotly update the player buffer
         if self.listen_mode == "B":
-            self.player.set_buffer(self.wet_audio, self.sample_rate)
+            self.player.set_buffer(self.player_ready_wet, self.sample_rate)
 
     def _on_render_error(self, err_msg):
         self.is_rendering = False
@@ -364,7 +470,9 @@ class UIController:
                     'saturation_mode': self.view.sat_mode_combo.get(),
                     'mono_freq': float(self.view.mono_freq_slider.get()),
                     'mono_bypass': self.view.mono_bypass_var.get(),
-                    'target_lufs': float(self.view.lufs_slider.get())
+                    'target_lufs': float(self.view.lufs_slider.get()),
+                    'match_eq_fir': self.match_fir_coeff,
+                    'match_amount': float(self.view.match_amount_slider.get()) / 100.0
                 }
                 
                 # Double-check render (some apps like soundfile don't like 32-bit for MP3)

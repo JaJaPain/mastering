@@ -5,6 +5,7 @@ import numpy as np
 from ui.theme import apply_dark_theme, Colors
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
+from ui.components.waveform import WaveformSeeker
 
 class MainView(tk.Tk):
     """
@@ -101,6 +102,33 @@ class MainView(tk.Tk):
         self.save_preset_btn = ttk.Button(preset_frame, text="Save Current")
         self.save_preset_btn.pack(side=tk.RIGHT)
         
+        ttk.Label(control_panel, text="Reference Matching", style="Panel.TLabel", font=("Segoe UI", 11, "bold")).pack(pady=(15, 5))
+        
+        match_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        match_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        self.load_ref_btn = ttk.Button(match_frame, text="Select Reference Track...")
+        self.load_ref_btn.pack(side=tk.LEFT)
+        ToolTip(self.load_ref_btn, "Choose a professional song (WAV) to match your tonal balance to.")
+        
+        self.match_status_label = ttk.Label(match_frame, text="None Loaded", foreground=Colors.TEXT_SECONDARY, font=("Segoe UI", 8))
+        self.match_status_label.pack(side=tk.LEFT, padx=10)
+        
+        self.clear_ref_btn = ttk.Button(match_frame, text="Clear", width=8)
+        self.clear_ref_btn.pack(side=tk.RIGHT)
+        
+        match_amount_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        match_amount_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        lbl_match = ttk.Label(match_amount_frame, text="Apply Match (%)", style="Panel.TLabel", width=15)
+        lbl_match.pack(side=tk.LEFT)
+        ToolTip(lbl_match, "Blends the reference EQ curve into your track.\n0% = Original Tone | 100% = Full Match.")
+        
+        self.match_amount_slider = ttk.Scale(match_amount_frame, from_=0.0, to=100.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.match_amount_slider.set(0.0)
+        self.match_amount_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        self.match_amount_slider.state(['disabled'])
+
         ttk.Label(control_panel, text="DSP Chain Parameters", style="Panel.TLabel", font=("Segoe UI", 11, "bold")).pack(pady=10)
         
         # Input Gain Slider
@@ -259,6 +287,13 @@ class MainView(tk.Tk):
         self.meter_r = LevelMeter(right_meter_frame, height=180)
         self.meter_r.pack()
         ttk.Label(right_meter_frame, text="R", style="Panel.TLabel").pack(pady=5)
+        
+        # --- Bottom: Waveform Seeker (Full Width) ---
+        waveform_container = ttk.Frame(outer_frame, style="Panel.TFrame", height=100)
+        waveform_container.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 10))
+        
+        self.waveform_seeker = WaveformSeeker(waveform_container, height=80)
+        self.waveform_seeker.pack(fill=tk.BOTH, expand=True)
 
 
 
@@ -323,6 +358,8 @@ class MainView(tk.Tk):
                     self.meter_r.set_level(rms_r, peak_r)
                 elif msg['type'] == 'lufs':
                     self.meter_lufs.update_lufs(msg['data'])
+                elif msg['type'] == 'progress':
+                    self.waveform_seeker.set_progress(msg['data'])
                 elif msg['type'] == 'render_complete':
                     self.controller._on_render_complete(msg['data'])
                 elif msg['type'] == 'render_error':
