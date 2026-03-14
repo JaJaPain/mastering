@@ -10,6 +10,8 @@ from engine.dsp.processor import AudioProcessor
 from engine.io.audio_io import read_audio, write_audio
 from engine.io.playback import AudioPlayer
 from engine.io import preset_manager
+from ui.dialogs.preset_battle import PresetBattleDialog, BatchProgressWindow, ComparisonConsole
+from ui.components.tooltip import ToolTip
 
 class UIController:
     def __init__(self):
@@ -36,6 +38,7 @@ class UIController:
         
         self.view.export_btn.config(command=self.export_master)
         self.view.load_btn.config(command=self.load_audio_file)
+        self.view.compare_btn.config(command=self.start_preset_battle)
         
         # Playback events
         self.view.play_btn.config(command=self.play_audio)
@@ -62,7 +65,6 @@ class UIController:
         self.view.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
         self.view.save_preset_btn.config(command=self.on_save_preset)
         self.view.match_btn.config(command=self.auto_match_loudness, state="disabled")
-        from ui.components.tooltip import ToolTip
         ToolTip(self.view.match_btn, "Please select a Genre Preset first\nto unlock Loudness Matching.")
         
         self.view.load_ref_btn.config(command=self.load_reference_track)
@@ -179,6 +181,7 @@ class UIController:
         self.view.match_amount_slider.state(['disabled'])
         self.trigger_render()
 
+
     def seek_audio(self, progress):
         if self.dry_audio is None:
             return
@@ -229,6 +232,10 @@ class UIController:
                 
                 # Generate visual waveform
                 self._generate_waveform(data)
+                
+                # Reset loop markers in player
+                self.player.loop_start = 0
+                self.player.loop_end = len(data)
                 
                 # Pre-cache player-ready buffer
                 self.player_ready_dry = np.ascontiguousarray(data, dtype=np.float32)
@@ -562,6 +569,81 @@ class UIController:
                 self.view.after(0, lambda msg=str(e): messagebox.showerror("Error", f"Matching failed:\n{msg}"))
 
         threading.Thread(target=analysis_thread, daemon=True).start()
+
+    def start_preset_battle(self):
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load an audio file first!")
+            return
+            
+        names = preset_manager.get_preset_names()
+        PresetBattleDialog(self.view, names, self.on_battle_start)
+
+    def on_battle_start(self, selected_presets, output_dir, use_spatial):
+        msg = f"This will master your track using {len(selected_presets)} different presets.\n\n"
+        msg += "It may take several minutes depending on your CPU.\n"
+        msg += "Do you want to proceed?"
+        if not messagebox.askyesno("Confirm Batch", msg):
+            return
+            
+        self.batch_win = BatchProgressWindow(self.view, self.cancel_batch)
+        self.batch_running = True
+        
+        threading.Thread(target=self._run_batch_mastering, args=(selected_presets, output_dir, use_spatial), daemon=True).start()
+
+    def cancel_batch(self):
+        self.batch_running = False
+
+    def _run_batch_mastering(self, presets, output_dir, use_spatial):
+        results = {"Original": self.dry_audio}
+        target_lufs = float(self.view.lufs_slider.get())
+        
+        total_steps = len(presets)
+        
+        try:
+            for i, name in enumerate(presets):
+                if not self.batch_running: break
+                
+                self.view.after(0, lambda: self.batch_win.update_progress(f"Processing: {name}...", (i / total_steps) * 100))
+                
+                # Load preset data
+                p_data = preset_manager.get_preset(name)
+                
+                # Map JSON keys to processor arguments (handling both long and short names)
+                params = {
+                    'input_gain_db': float(p_data.get('input_gain', 0.0)),
+                    'air_gain_db': float(p_data.get('air_gain', p_data.get('air_gain_db', p_data.get('air', 2.0)))),
+                    'stereo_width_db': float(p_data.get('stereo_width', p_data.get('stereo_width_db', p_data.get('width', 1.5 if use_spatial else 0.0)))),
+                    'drive_low_db': float(p_data.get('drive', p_data.get('drive_low_db', p_data.get('drive_low', 0.0)))),
+                    'drive_mid_db': float(p_data.get('drive', p_data.get('drive_mid_db', p_data.get('drive_mid', 0.0)))),
+                    'drive_high_db': float(p_data.get('drive', p_data.get('drive_high_db', p_data.get('drive_high', 0.0)))),
+                    'exciter_bypass': bool(p_data.get('exciter_bypass', False)),
+                    'saturation_mode': str(p_data.get('saturation_mode', 'Soft Clip')),
+                    'mono_freq': float(p_data.get('mono_freq', 150.0 if use_spatial else 20.0)),
+                    'mono_bypass': bool(p_data.get('mono_bypass', False)) if not use_spatial else False,
+                    'match_eq_fir': self.match_fir_coeff,
+                    'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
+                    'target_lufs': target_lufs
+                }
+                
+                # Perform the master
+                mastered = self.processor.process(self.dry_audio, **params)
+                results[name] = mastered
+                
+                # Save to disk
+                # Sanitize name for illegal characters in filename (Windows)
+                safe_name = "".join([c if c.isalnum() or c in (' ', '_', '-') else '_' for c in name])
+                filename = f"Master_{safe_name.replace(' ', '_')}.wav"
+                save_path = os.path.join(output_dir, filename)
+                write_audio(save_path, self.sample_rate, mastered, format='WAV', subtype='PCM_24')
+                
+            if self.batch_running:
+                self.view.after(0, lambda: self.batch_win.destroy())
+                self.view.after(0, lambda: ComparisonConsole(self.view, results, self.sample_rate, self))
+                
+        except Exception as e:
+            self.view.after(0, lambda: messagebox.showerror("Batch Error", f"Process failed:\n{e}"))
+            if hasattr(self, 'batch_win'):
+                self.view.after(0, lambda: self.batch_win.destroy())
 
     def run(self):
         self._sample_wave_loop() # Kick off visual loop safely

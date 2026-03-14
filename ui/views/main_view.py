@@ -6,6 +6,7 @@ from ui.theme import apply_dark_theme, Colors
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
 from ui.components.waveform import WaveformSeeker
+from ui.components.range_slider import RangeSlider
 
 class MainView(tk.Tk):
     """
@@ -45,6 +46,10 @@ class MainView(tk.Tk):
         self.load_btn = ttk.Button(load_btn_frame, text="Load WAV")
         self.load_btn.pack(side=tk.LEFT)
         
+        self.compare_btn = ttk.Button(load_btn_frame, text="Preset Battle ⚔️")
+        self.compare_btn.pack(side=tk.LEFT, padx=(10, 0))
+        ToolTip(self.compare_btn, "Compare up to 4 different mastering presets side-by-side\nwith synced solo-playback.")
+
         self.file_label = ttk.Label(load_btn_frame, text="No file loaded", style="Header.TLabel", font=("Segoe UI", 10))
         self.file_label.pack(side=tk.LEFT, padx=10)
         
@@ -65,7 +70,6 @@ class MainView(tk.Tk):
         self.mastering_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         outer_frame = self.mastering_frame
-
         
         content_frame = ttk.Frame(outer_frame, style="Main.TFrame")
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
@@ -173,7 +177,7 @@ class MainView(tk.Tk):
         self.exciter_bypass_chk = ttk.Checkbutton(exciter_header, text="Bypass", variable=self.exciter_bypass_var)
         self.exciter_bypass_chk.pack(side=tk.RIGHT)
         
-        self.sat_mode_combo = ttk.Combobox(exciter_header, values=["Soft Clip", "Tape"], state="readonly", width=10, font=("Segoe UI", 9))
+        self.sat_mode_combo = ttk.Combobox(exciter_header, values=["Soft Clip", "Tape", "Intelligent"], state="readonly", width=10, font=("Segoe UI", 9))
         self.sat_mode_combo.set("Soft Clip")
         self.sat_mode_combo.pack(side=tk.RIGHT, padx=10)
         ttk.Label(exciter_header, text="Mode:", style="Panel.TLabel").pack(side=tk.RIGHT)

@@ -24,9 +24,12 @@ class AudioProcessor:
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
         """
-        # Ensure the correct dtype for processing to prevent clipping
+        # Ensure the correct dtype for processing and ALWAYS create a copy
+        # to prevent in-place modification of the source buffer.
         if audio_data.dtype != np.float64:
             audio_data = audio_data.astype(np.float64)
+        else:
+            audio_data = audio_data.copy()
 
         # 0. Input Gain Staging
         if input_gain_db != 0.0:
@@ -171,9 +174,14 @@ class AudioProcessor:
         high_band = signal.filtfilt(hp_high_b, hp_high_a, mid_high_temp, axis=0)
         
         # 3. Apply Saturation to each band
-        low_band = self.apply_saturation(low_band, low_db, mode)
-        mid_band = self.apply_saturation(mid_band, mid_db, mode)
-        high_band = self.apply_saturation(high_band, high_db, mode)
+        if mode == "Intelligent":
+            low_band = self.apply_saturation(low_band, low_db, "Intelligent_Low")
+            mid_band = self.apply_saturation(mid_band, mid_db, "Intelligent_Mid")
+            high_band = self.apply_saturation(high_band, high_db, "Intelligent_High")
+        else:
+            low_band = self.apply_saturation(low_band, low_db, mode)
+            mid_band = self.apply_saturation(mid_band, mid_db, mode)
+            high_band = self.apply_saturation(high_band, high_db, mode)
         
         # 4. Recombine
         return low_band + mid_band + high_band
@@ -207,6 +215,25 @@ class AudioProcessor:
             bias = 0.005
             saturated = (x + bias) / (1.0 + np.abs(x + bias)) - (bias / (1.0 + bias))
             return saturated / (drive_linear * 0.7 + 0.3)
+        
+        elif mode == "Intelligent_Low":
+            # Intelligent Low: Asymmetric Hard Clipping. 
+            # This truncates the kick peaks abruptly (low recovery time) while adding weight.
+            x = data * drive_linear
+            # We clip hard at 0.95 to leave tiny headroom for the final limiter
+            return np.clip(x, -0.95, 0.95) / (drive_linear * 0.5 + 0.5)
+
+        elif mode == "Intelligent_High":
+            # Intelligent High: Harmonic Shimmer (Exciter).
+            # Uses a power-law distortion to add 3rd harmonic brilliance without 'harsh' flat-topping.
+            x = data * drive_linear
+            # x + x^3 / 3 for even/odd balance shimmer
+            return (x + (x**3) / 6.0) / (drive_linear * 0.8 + 0.2)
+            
+        elif mode == "Intelligent_Mid":
+            # Intelligent Mid: Standard Soft-Clip (tanh) for smooth vocal/snare warmth.
+            return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)
+
         else:
             # Standard Soft Clip (tanh)
             return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)

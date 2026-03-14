@@ -12,6 +12,8 @@ class AudioPlayer:
         self.sample_rate = 44100
         self.current_frame = 0
         self.is_playing = False
+        self.loop_start = 0
+        self.loop_end = 0
         
     def set_buffer(self, buffer: np.ndarray, sample_rate: int):
         """
@@ -37,17 +39,27 @@ class AudioPlayer:
             if status:
                 pass # Ignore underflows in simple playback
             
-            chunksize = min(len(self.buffer) - self.current_frame, frames)
+            # Use local copies for thread safety
+            end_frame = self.loop_end if self.loop_end > 0 else len(self.buffer)
+            start_frame = self.loop_start
+            
+            chunksize = min(end_frame - self.current_frame, frames)
+            
             if chunksize <= 0:
-                outdata.fill(0)
-                raise sd.CallbackStop()
+                # Loop back if we hit the end
+                self.current_frame = start_frame
+                chunksize = min(end_frame - self.current_frame, frames)
                 
             outdata[:chunksize] = self.buffer[self.current_frame:self.current_frame + chunksize]
             if chunksize < frames:
-                outdata[chunksize:] = 0
-                raise sd.CallbackStop()
-                
-            self.current_frame += chunksize
+                # Loop back mid-chunk if needed
+                remaining = frames - chunksize
+                self.current_frame = start_frame
+                chunksize2 = min(end_frame - self.current_frame, remaining)
+                outdata[chunksize:chunksize+chunksize2] = self.buffer[self.current_frame:self.current_frame + chunksize2]
+                self.current_frame += chunksize2
+            else:
+                self.current_frame += chunksize
 
         channels = self.buffer.shape[1]
         self.stream = sd.OutputStream(
