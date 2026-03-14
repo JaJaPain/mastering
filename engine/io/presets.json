@@ -4,6 +4,7 @@
       "input_gain": 2.0,
       "air_gain": 2.5,
       "drive": 3.0,
+      "stereo_width": 1.5,
       "target_lufs": -9.0,
       "description": "Aggressive and loud; punchy drums and forward guitars."
     },
@@ -39,6 +40,7 @@
       "input_gain": 1.5,
       "air_gain": 3.0,
       "drive": 1.5,
+      "stereo_width": 2.0,
       "target_lufs": -10.0,
       "description": "Bright 'Air' and tight low-end for maximum accessibility."
     },
@@ -53,6 +55,7 @@
       "input_gain": -1.0,
       "air_gain": -1.5,
       "drive": 2.5,
+      "saturation_mode": "Tape",
       "target_lufs": -15.0,
       "description": "Warm saturation with rolled-off highs for a nostalgic vibe."
     },
@@ -60,6 +63,7 @@
       "input_gain": 3.5,
       "air_gain": 2.5,
       "drive": 4.0,
+      "stereo_width": 2.5,
       "target_lufs": -7.0,
       "description": "Highest energy; optimized for club sound systems."
     },
@@ -88,6 +92,7 @@
       "input_gain": 0.5,
       "air_gain": 0.5,
       "drive": 2.0,
+      "saturation_mode": "Tape",
       "target_lufs": -13.0,
       "description": "Rich harmonic saturation to mimic vintage analog tape."
     },
@@ -116,6 +121,7 @@
       "input_gain": 4.0,
       "air_gain": 2.0,
       "drive": 1.5,
+      "stereo_width": 3.0,
       "target_lufs": -8.0,
       "description": "Huge dynamic shifts with a loud, impactful ceiling."
     },

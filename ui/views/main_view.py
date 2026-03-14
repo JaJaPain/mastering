@@ -5,6 +5,7 @@ import numpy as np
 from ui.theme import apply_dark_theme, Colors
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
+from ui.views.visualizer_view import VisualizerView
 
 class MainView(tk.Tk):
     """
@@ -25,11 +26,27 @@ class MainView(tk.Tk):
         
         # Layout Frames
         self.create_header()
+        self.create_tab_navbar()
         self.create_main_content()
         self.create_footer()
         
         # Start UI queue polling
         self.update_visualizer()
+        
+    def create_tab_navbar(self):
+        nav_frame = ttk.Frame(self, style="Header.TFrame", height=40)
+        nav_frame.pack(side=tk.TOP, fill=tk.X)
+        nav_frame.pack_propagate(False)
+
+        self.tab_master_btn = ttk.Button(nav_frame, text="🎚 MASTERING", width=15)
+        self.tab_master_btn.pack(side=tk.LEFT, padx=(20, 5), pady=5)
+
+        self.tab_viz_btn = ttk.Button(nav_frame, text="🌌 VISUALIZER", width=15)
+        self.tab_viz_btn.pack(side=tk.LEFT, padx=5, pady=5)
+
+        # Tab Switching Logic (implemented via local hide/show)
+        self.tab_master_btn.config(command=lambda: self.switch_tab("master"))
+        self.tab_viz_btn.config(command=lambda: self.switch_tab("visualizer"))
         
     def create_header(self):
         header_frame = ttk.Frame(self, style="Header.TFrame", height=60)
@@ -60,9 +77,15 @@ class MainView(tk.Tk):
         self.toggle_vis_btn.pack(side=tk.LEFT, padx=5)
         
     def create_main_content(self):
-        # Frame holding everything below header
-        outer_frame = ttk.Frame(self, style="Main.TFrame")
-        outer_frame.pack(fill=tk.BOTH, expand=True)
+        # Container for the tabs
+        self.tab_container = ttk.Frame(self, style="Main.TFrame")
+        self.tab_container.pack(fill=tk.BOTH, expand=True)
+
+        # --- TAB: Mastering ---
+        self.mastering_frame = ttk.Frame(self.tab_container, style="Main.TFrame")
+        self.mastering_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        outer_frame = self.mastering_frame
 
         # --- Top Panel: Visualizer ---
         self.vis_panel = tk.Canvas(outer_frame, height=180, bg=Colors.BG_PANEL, highlightthickness=0)
@@ -123,13 +146,21 @@ class MainView(tk.Tk):
         air_frame = ttk.Frame(control_panel, style="Panel.TFrame")
         air_frame.pack(fill=tk.X, padx=20, pady=10)
         
-        lbl_air = ttk.Label(air_frame, text="Air Shelf (dB)", style="Panel.TLabel", width=15)
-        lbl_air.pack(side=tk.LEFT)
-        ToolTip(lbl_air, "A zero-phase 12kHz shelf EQ filter.\nAdds 'shimmer' and top-end clarity to dull mixes without phasing.")
-        
         self.air_slider = ttk.Scale(air_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
         self.air_slider.set(2.0)
         self.air_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        
+        # Stereo Width Slider
+        width_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        width_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        lbl_width = ttk.Label(width_frame, text="Stereo Width (dB)", style="Panel.TLabel", width=15)
+        lbl_width.pack(side=tk.LEFT)
+        ToolTip(lbl_width, "Enhances the stereo image by boosting side-channel energy.\nAdds dimension and 'bigness' to the master.")
+        
+        self.width_slider = ttk.Scale(width_frame, from_=-6.0, to=6.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.width_slider.set(0.0)
+        self.width_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
         # Multi-Band Exciter Section
         exciter_header = ttk.Frame(control_panel, style="Panel.TFrame")
@@ -140,6 +171,11 @@ class MainView(tk.Tk):
         self.exciter_bypass_var = tk.BooleanVar(value=False)
         self.exciter_bypass_chk = ttk.Checkbutton(exciter_header, text="Bypass", variable=self.exciter_bypass_var)
         self.exciter_bypass_chk.pack(side=tk.RIGHT)
+        
+        self.sat_mode_combo = ttk.Combobox(exciter_header, values=["Soft Clip", "Tape"], state="readonly", width=10, font=("Segoe UI", 9))
+        self.sat_mode_combo.set("Soft Clip")
+        self.sat_mode_combo.pack(side=tk.RIGHT, padx=10)
+        ttk.Label(exciter_header, text="Mode:", style="Panel.TLabel").pack(side=tk.RIGHT)
         
         # Low Drive
         low_frame = ttk.Frame(control_panel, style="Panel.TFrame")
@@ -251,6 +287,23 @@ class MainView(tk.Tk):
         self.meter_r.pack()
         ttk.Label(right_meter_frame, text="R", style="Panel.TLabel").pack(pady=5)
 
+        # --- TAB: Visualizer ---
+        self.visualizer_frame = VisualizerView(self.tab_container, self.controller)
+        self.visualizer_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        # Show Mastering by default
+        self.switch_tab("master")
+
+    def switch_tab(self, tab_name):
+        if tab_name == "master":
+            self.mastering_frame.tkraise()
+            self.tab_master_btn.config(style="ActiveToggle.TButton")
+            self.tab_viz_btn.config(style="TButton")
+        else:
+            self.visualizer_frame.tkraise()
+            self.tab_master_btn.config(style="TButton")
+            self.tab_viz_btn.config(style="ActiveToggle.TButton")
+
     def create_footer(self):
         footer_frame = ttk.Frame(self, style="Header.TFrame", height=60)
         footer_frame.pack(side=tk.BOTTOM, fill=tk.X)
@@ -300,6 +353,14 @@ class MainView(tk.Tk):
 
         self.export_btn = ttk.Button(export_right, text="Export Master", width=15)
         self.export_btn.pack(side=tk.LEFT)
+
+        # New: Visualizer Export Section
+        viz_frame = ttk.Frame(footer_frame, style="Header.TFrame")
+        viz_frame.pack(side=tk.RIGHT, padx=(20, 0), pady=15)
+
+        self.viz_render_btn = ttk.Button(viz_frame, text="🎥 Visualizer", width=15)
+        self.viz_render_btn.pack(side=tk.LEFT)
+        ToolTip(self.viz_render_btn, "Generate a 1080p MP4 visualizer \nfor YouTube using the mastered audio.")
 
     def update_visualizer(self):
         try:

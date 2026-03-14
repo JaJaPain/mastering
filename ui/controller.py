@@ -2,6 +2,8 @@ import threading
 import os
 import queue
 import numpy as np
+import tkinter as tk
+from PIL import Image, ImageTk
 from tkinter import filedialog, messagebox
 from ui.views.main_view import MainView
 from engine.dsp.processor import AudioProcessor
@@ -23,6 +25,21 @@ class UIController:
         self.render_timer = None
         self.is_rendering = False
         
+        # --- Visualizer State (New Tab) ---
+        self.viz_logo_path = ""
+        self.viz_mark_path = ""
+        self.viz_external_audio = ""
+        self.use_external_audio = False
+        self.viz_color_a = "#00f2ff"
+        self.viz_color_b = "#7000ff"
+        self.viz_preview_engine = None
+        self.viz_preview_timer = None
+        self.viz_preview_loading = False
+        self.is_viz_rendering = False
+        
+        # Bind Visualizer View
+        self.bind_visualizer_controls()
+        
         self.visuals_enabled = True
         self.vis_timer_id = None
         self.lufs_history = [] 
@@ -32,6 +49,7 @@ class UIController:
         self.view.load_btn.config(command=self.load_audio_file)
         self.view.toggle_vis_btn.config(command=self.toggle_visuals)
         self.view.vis_btn.config(command=self.toggle_visual_mode)
+        self.view.viz_render_btn.config(command=self.render_youtube_visualizer)
         
         # Playback events
         self.view.play_btn.config(command=self.play_audio)
@@ -42,11 +60,13 @@ class UIController:
         # Sliders: Trigger debounced render
         self.view.gain_slider.config(command=self.on_slider_change)
         self.view.air_slider.config(command=self.on_slider_change)
+        self.view.width_slider.config(command=self.on_slider_change)
         self.view.drive_low_slider.config(command=self.on_slider_change)
         self.view.drive_mid_slider.config(command=self.on_slider_change)
         self.view.drive_high_slider.config(command=self.on_slider_change)
         self.view.lufs_slider.config(command=self.on_slider_change)
         self.view.exciter_bypass_chk.config(command=self.on_slider_change)
+        self.view.sat_mode_combo.bind("<<ComboboxSelected>>", self.on_slider_change)
         self.view.mono_freq_slider.config(command=self.on_slider_change)
         self.view.mono_bypass_chk.config(command=self.on_slider_change)
         
@@ -55,6 +75,147 @@ class UIController:
         self.view.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
         self.view.save_preset_btn.config(command=self.on_save_preset)
         self.view.match_btn.config(command=self.auto_match_loudness)
+        
+    def bind_visualizer_controls(self):
+        v = self.view.visualizer_frame
+        v.logo_btn.config(command=self.choose_viz_logo)
+        v.mark_btn.config(command=self.choose_viz_mark)
+        v.audio_btn.config(command=self.toggle_viz_audio_source)
+        v.color_a_btn.config(command=lambda: self.choose_viz_color("A"))
+        v.color_b_btn.config(command=lambda: self.choose_viz_color("B"))
+        
+        # Link Start/Reset
+        v.start_btn.config(command=self.render_youtube_visualizer)
+        v.reset_btn.config(command=self.reset_viz_preview)
+
+        # Bind Sliders for Live Preview
+        v.cycle_slider.external_cmd = self.on_viz_param_change
+        v.travel_slider.external_cmd = self.on_viz_param_change
+        v.rotate_slider.external_cmd = self.on_viz_param_change
+        v.shake_slider.external_cmd = self.on_viz_param_change
+        v.star_slider.external_cmd = self.on_viz_param_change
+
+    def reset_viz_preview(self):
+        self.viz_preview_engine = None
+        self.update_viz_preview()
+        self.view.visualizer_frame.status_label.config(text="NEBULA ENGINE RESET")
+
+    def on_viz_param_change(self, val=None):
+        if self.is_viz_rendering: return # Skip preview while rendering final video
+        if self.viz_preview_timer:
+            self.view.after_cancel(self.viz_preview_timer)
+        self.viz_preview_timer = self.view.after(200, self.update_viz_preview)
+
+    def update_viz_preview(self):
+        v = self.view.visualizer_frame
+        if not v.winfo_exists() or self.viz_preview_loading: return
+
+        # Determine Audio Source for Preview
+        audio_path = ""
+        if self.use_external_audio and self.viz_external_audio:
+            audio_path = self.viz_external_audio
+        elif not self.use_external_audio and self.loaded_file_path:
+            audio_path = self.loaded_file_path
+
+        if not audio_path or not os.path.exists(audio_path): return
+
+        def preview_worker():
+            try:
+                self.viz_preview_loading = True
+                from visualizer.engine import ProVisualizer
+                
+                viz_params = {
+                    'color_a': self.viz_color_a,
+                    'color_b': self.viz_color_b,
+                    'cycle_speed': float(v.cycle_slider.get()),
+                    'travel_speed': float(v.travel_slider.get()),
+                    'rotation_force': float(v.rotate_slider.get()),
+                    'shake_force': float(v.shake_slider.get()),
+                    'star_size': float(v.star_slider.get()),
+                    'logo_path': self.viz_logo_path,
+                    'mark_path': self.viz_mark_path,
+                    'resolution': (640, 360), 
+                    'fps': 30
+                }
+
+                # Initialize preview engine if needed
+                create_new = not self.viz_preview_engine or self.viz_preview_engine.audio_path != audio_path
+                if create_new:
+                    self.view.after(0, lambda: v.status_label.config(text="ANALYZING PREVIEW AUDIO..."))
+                    self.viz_preview_engine = ProVisualizer(audio_path, "", params=viz_params)
+                    self.viz_preview_engine.analyze_audio()
+                    self.view.after(0, lambda: v.status_label.config(text="NEBULA ENGINE READY"))
+                else:
+                    self.viz_preview_engine.params.update(viz_params)
+                    self.viz_preview_engine.logo_img = self.viz_preview_engine.load_asset(self.viz_logo_path)
+                    self.viz_preview_engine.mark_img = self.viz_preview_engine.load_asset(self.viz_mark_path)
+
+                # Draw frame
+                pil_img = self.viz_preview_engine.get_frame(10.0)
+                
+                def update_canvas(img):
+                    cw, ch = v.canvas.winfo_width(), v.canvas.winfo_height()
+                    if cw < 10: cw, ch = 900, 280
+                    resized = img.resize((cw, ch), Image.Resampling.BILINEAR)
+                    self.tk_preview_img = ImageTk.PhotoImage(resized)
+                    v.canvas.delete("all")
+                    v.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_preview_img)
+
+                self.view.after(0, lambda: update_canvas(pil_img))
+                
+            except Exception as e:
+                print(f"[PREVIEW ERROR] {e}")
+            finally:
+                self.viz_preview_loading = False
+
+        threading.Thread(target=preview_worker, daemon=True).start()
+
+    def choose_viz_logo(self):
+        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg *.webp")])
+        if path:
+            self.viz_logo_path = path
+            self.view.visualizer_frame.logo_path_label.config(text=os.path.basename(path))
+            self.update_viz_preview()
+
+    def choose_viz_mark(self):
+        path = filedialog.askopenfilename(filetypes=[("PNG Files", "*.png")])
+        if path:
+            self.viz_mark_path = path
+            self.update_viz_preview()
+
+    def toggle_viz_audio_source(self):
+        self.use_external_audio = not self.use_external_audio
+        v = self.view.visualizer_frame
+        if self.use_external_audio:
+            path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.wav *.mp3 *.flac")])
+            if path:
+                self.viz_external_audio = path
+                v.audio_path_label.config(text=os.path.basename(path))
+                v.audio_btn.config(text="Use External")
+                self.update_viz_preview()
+            else:
+                self.use_external_audio = False # Revert
+        else:
+            v.audio_path_label.config(text="Current Session")
+            v.audio_btn.config(text="Use Mastered")
+            self.update_viz_preview()
+
+    def choose_viz_color(self, target):
+        from tkinter import colorchooser
+        color = colorchooser.askcolor(title=f"Choose Color {target}")[1]
+        if color:
+            # Calculate brightness to decide text color (white or black)
+            rgb = self.view.visualizer_frame.winfo_rgb(color)
+            brightness = (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 65535
+            fg = "black" if brightness > 0.5 else "white"
+
+            if target == "A":
+                self.viz_color_a = color
+                self.view.visualizer_frame.color_a_btn.config(bg=color, fg=fg)
+            else:
+                self.viz_color_b = color
+                self.view.visualizer_frame.color_b_btn.config(bg=color, fg=fg)
+            self.update_viz_preview()
         
     def refresh_presets(self):
         names = preset_manager.get_preset_names()
@@ -67,6 +228,8 @@ class UIController:
             # Update sliders without triggering a storm of render events
             self.view.gain_slider.set(preset_data.get("input_gain", preset_data.get("Input Gain (dB)", 0.0)))
             self.view.air_slider.set(preset_data.get("air_gain", preset_data.get("Air Shelf (dB)", 2.0)))
+            self.view.width_slider.set(preset_data.get("stereo_width", 0.0))
+            self.view.sat_mode_combo.set(preset_data.get("saturation_mode", "Soft Clip"))
             
             # Support both old single drive presets and new multiband ones
             if "drive_mid" in preset_data or "Clipper Drive (dB)" in preset_data:
@@ -95,6 +258,8 @@ class UIController:
             data = {
                 "target_lufs": float(self.view.lufs_slider.get()),
                 "air_gain": float(self.view.air_slider.get()),
+                "stereo_width": float(self.view.width_slider.get()),
+                "saturation_mode": self.view.sat_mode_combo.get(),
                 "drive_low": float(self.view.drive_low_slider.get()),
                 "drive_mid": float(self.view.drive_mid_slider.get()),
                 "drive_high": float(self.view.drive_high_slider.get()),
@@ -316,10 +481,12 @@ class UIController:
         params = {
             'input_gain_db': float(self.view.gain_slider.get()),
             'air_gain_db': float(self.view.air_slider.get()),
+            'stereo_width_db': float(self.view.width_slider.get()),
             'drive_low_db': float(self.view.drive_low_slider.get()),
             'drive_mid_db': float(self.view.drive_mid_slider.get()),
             'drive_high_db': float(self.view.drive_high_slider.get()),
             'exciter_bypass': self.view.exciter_bypass_var.get(),
+            'saturation_mode': self.view.sat_mode_combo.get(),
             'mono_freq': float(self.view.mono_freq_slider.get()),
             'mono_bypass': self.view.mono_bypass_var.get()
         }
@@ -407,10 +574,12 @@ class UIController:
                 params = {
                     'input_gain_db': float(self.view.gain_slider.get()),
                     'air_gain_db': float(self.view.air_slider.get()),
+                    'stereo_width_db': float(self.view.width_slider.get()),
                     'drive_low_db': float(self.view.drive_low_slider.get()),
                     'drive_mid_db': float(self.view.drive_mid_slider.get()),
                     'drive_high_db': float(self.view.drive_high_slider.get()),
                     'exciter_bypass': self.view.exciter_bypass_var.get(),
+                    'saturation_mode': self.view.sat_mode_combo.get(),
                     'mono_freq': float(self.view.mono_freq_slider.get()),
                     'mono_bypass': self.view.mono_bypass_var.get(),
                     'target_lufs': float(self.view.lufs_slider.get())
@@ -438,6 +607,116 @@ class UIController:
                 messagebox.showerror("Export Error", f"Failed to start export:\n{e}")
                 self.view.status_label.config(text="Export failed.")
 
+    def render_youtube_visualizer(self):
+        """
+        Triggers the 1080p Visualizer render process for the current mastered track.
+        """
+        # Determine Audio Source
+        if self.use_external_audio:
+            if not self.viz_external_audio:
+                messagebox.showwarning("Visualizer", "Please choose an external audio file first!")
+                return
+            audio_path = self.viz_external_audio
+            # No need to render anything if using external
+        else:
+            if self.wet_audio is None:
+                messagebox.showwarning("Visualizer", "Please load and render a mastered file first!")
+                return
+            # We'll need a temp wav for the current session audio
+            temp_wav = os.path.join(os.path.dirname(self.loaded_file_path), "temp_master_viz.wav")
+            audio_path = temp_wav
+
+        # 1. Ask where to save the MP4
+        orig_name = os.path.basename(self.loaded_file_path if not self.use_external_audio else self.viz_external_audio)
+        name_no_ext = os.path.splitext(orig_name)[0]
+        default_save = f"Visualizer_{name_no_ext}.mp4"
+        
+        save_path = filedialog.asksaveasfilename(
+            title="Save YouTube Visualizer",
+            initialfile=default_save,
+            defaultextension=".mp4",
+            filetypes=(("MP4 Video", "*.mp4"), ("All Files", "*.*"))
+        )
+        
+        if not save_path:
+            return
+
+        self.is_viz_rendering = True
+        self.view.visualizer_frame.status_label.config(text="RECORDING NEBULA SEQUENCE...")
+        self.view.viz_render_btn.config(state="disabled")
+
+        def viz_thread():
+            try:
+                # 2. Extract visualizer params from sliders
+                v = self.view.visualizer_frame
+                viz_params = {
+                    'color_a': self.viz_color_a,
+                    'color_b': self.viz_color_b,
+                    'cycle_speed': float(v.cycle_slider.get()),
+                    'travel_speed': float(v.travel_speed.get()) if hasattr(v, 'travel_speed') else float(v.travel_slider.get()),
+                    'rotation_force': float(v.rotate_slider.get()),
+                    'shake_force': float(v.shake_slider.get()),
+                    'star_size': float(v.star_slider.get()),
+                    'logo_path': self.viz_logo_path,
+                    'mark_path': self.viz_mark_path,
+                    'resolution': (1920, 1080),
+                    'fps': 60
+                }
+
+                # 3. Create temp wav if using session audio
+                if not self.use_external_audio:
+                    params = {
+                        'input_gain_db': float(self.view.gain_slider.get()),
+                        'air_gain_db': float(self.view.air_slider.get()),
+                        'stereo_width_db': float(self.view.width_slider.get()),
+                        'drive_low_db': float(self.view.drive_low_slider.get()),
+                        'drive_mid_db': float(self.view.drive_mid_slider.get()),
+                        'drive_high_db': float(self.view.drive_high_slider.get()),
+                        'exciter_bypass': self.view.exciter_bypass_var.get(),
+                        'saturation_mode': self.view.sat_mode_combo.get(),
+                        'mono_freq': float(self.view.mono_freq_slider.get()),
+                        'mono_bypass': self.view.mono_bypass_var.get(),
+                        'target_lufs': float(self.view.lufs_slider.get())
+                    }
+                    self.view.after(0, lambda: self.view.visualizer_frame.status_label.config(text="PREPARING MASTER AUDIO..."))
+                    final_audio = self.processor.process(self.dry_audio, **params)
+                    write_audio(temp_wav, self.sample_rate, final_audio, format='WAV', subtype='PCM_24')
+
+                # 4. Engine Run
+                self.view.after(0, lambda: self.view.visualizer_frame.status_label.config(text="RENDERING 1080p NEBULA SEQUENCE (Est. 10-15m)..."))
+                from visualizer.engine import ProVisualizer
+                viz = ProVisualizer(audio_path, save_path, params=viz_params)
+                viz.export()
+                
+                # Cleanup
+                if not self.use_external_audio and os.path.exists(temp_wav):
+                    os.remove(temp_wav)
+                
+                def on_success():
+                    self.is_viz_rendering = False
+                    self.view.visualizer_frame.status_label.config(text="RENDER COMPLETE")
+                    self.view.viz_render_btn.config(state="normal")
+                    messagebox.showinfo("Success", f"YouTube Visualizer Exported!\n{save_path}")
+
+                self.view.after(0, on_success)
+
+            except Exception as e:
+                self.is_viz_rendering = False
+                import traceback
+                traceback.print_exc()
+                try:
+                    if 'temp_wav' in locals() and os.path.exists(temp_wav):
+                        os.remove(temp_wav)
+                except: pass
+                
+                def on_fail(msg):
+                    self.view.visualizer_frame.status_label.config(text="ENGINE FAILURE")
+                    self.view.viz_render_btn.config(state="normal")
+                    messagebox.showerror("Visualizer Error", f"Render Failed:\n{msg}")
+                self.view.after(0, lambda m=str(e): on_fail(m))
+
+        threading.Thread(target=viz_thread, daemon=True).start()
+
     def auto_match_loudness(self):
         """
         Background task to analyze the full song and adjust gain to hit target LUFS.
@@ -455,10 +734,12 @@ class UIController:
                 # 1. Take current settings (Air, Drive)
                 params = {
                     'air_gain_db': float(self.view.air_slider.get()),
+                    'stereo_width_db': float(self.view.width_slider.get()),
                     'drive_low_db': float(self.view.drive_low_slider.get()),
                     'drive_mid_db': float(self.view.drive_mid_slider.get()),
                     'drive_high_db': float(self.view.drive_high_slider.get()),
                     'exciter_bypass': self.view.exciter_bypass_var.get(),
+                    'saturation_mode': self.view.sat_mode_combo.get(),
                 }
                 
                 # 2. Start from current gain

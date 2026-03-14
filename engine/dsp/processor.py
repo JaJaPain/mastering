@@ -17,7 +17,8 @@ class AudioProcessor:
     def process(self, audio_data: np.ndarray, input_gain_db: float = 0.0, air_gain_db: float = 2.0, 
                 drive_low_db: float = 0.0, drive_mid_db: float = 0.0, drive_high_db: float = 0.0,
                 target_lufs: float = None, exciter_bypass: bool = False,
-                mono_freq: float = 150.0, mono_bypass: bool = False) -> np.ndarray:
+                mono_freq: float = 150.0, mono_bypass: bool = False,
+                stereo_width_db: float = 0.0, saturation_mode: str = "Soft Clip") -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -53,10 +54,14 @@ class AudioProcessor:
             mid = self.linear_phase_eq(mid, air_gain_db=0.0)
             side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
 
+            # Stereo Widening (Side Gain adjustment)
+            if stereo_width_db != 0.0:
+                side = self.apply_stereo_width(side, stereo_width_db)
+
             # Multi-Band Harmonic Exciter (Saturation)
             if not exciter_bypass:
-                mid = self.multiband_drive(mid, drive_low_db, drive_mid_db, drive_high_db)
-                side = self.multiband_drive(side, drive_low_db/2.0, drive_mid_db/2.0, drive_high_db/2.0)
+                mid = self.multiband_drive(mid, drive_low_db, drive_mid_db, drive_high_db, mode=saturation_mode)
+                side = self.multiband_drive(side, drive_low_db/2.0, drive_mid_db/2.0, drive_high_db/2.0, mode=saturation_mode)
 
             # Mono Maker (Specifically targets the Side channel to clear out low-end width)
             if not mono_bypass:
@@ -74,7 +79,7 @@ class AudioProcessor:
             # Mono fallback
             audio_data = self.linear_phase_eq(audio_data, air_gain_db)
             if not exciter_bypass:
-                audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db)
+                audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db, mode=saturation_mode)
             
 
         # 4. Loudness Matching (LUFS target)
@@ -86,6 +91,14 @@ class AudioProcessor:
         audio_data = self.limit(audio_data)
 
         return audio_data
+
+    def apply_stereo_width(self, side_channel: np.ndarray, width_db: float) -> np.ndarray:
+        """
+        Enhances or narrows the stereo field by adjusting the Side channel gain.
+        Positive values broaden the image; negative values narrow it.
+        """
+        width_linear = 10 ** (width_db / 20.0)
+        return side_channel * width_linear
 
     def calculate_rms(self, audio_data: np.ndarray) -> float:
         """
@@ -131,7 +144,7 @@ class AudioProcessor:
 
         return audio_data
 
-    def multiband_drive(self, audio_data: np.ndarray, low_db: float, mid_db: float, high_db: float) -> np.ndarray:
+    def multiband_drive(self, audio_data: np.ndarray, low_db: float, mid_db: float, high_db: float, mode: str = "Soft Clip") -> np.ndarray:
         """
         Splits audio into 3 bands and applies independent saturation.
         Uses 4th order Linkwitz-Riley crossovers for perfectly flat summation.
@@ -153,9 +166,9 @@ class AudioProcessor:
         high_band = signal.filtfilt(hp_high_b, hp_high_a, mid_high_temp, axis=0)
         
         # 3. Apply Saturation to each band
-        low_band = self.apply_saturation(low_band, low_db)
-        mid_band = self.apply_saturation(mid_band, mid_db)
-        high_band = self.apply_saturation(high_band, high_db)
+        low_band = self.apply_saturation(low_band, low_db, mode)
+        mid_band = self.apply_saturation(mid_band, mid_db, mode)
+        high_band = self.apply_saturation(high_band, high_db, mode)
         
         # 4. Recombine
         return low_band + mid_band + high_band
@@ -173,13 +186,25 @@ class AudioProcessor:
         # We apply filtering strictly to the Side channel
         return signal.filtfilt(b, a, side_channel, axis=0)
 
-    def apply_saturation(self, data: np.ndarray, drive_db: float) -> np.ndarray:
+    def apply_saturation(self, data: np.ndarray, drive_db: float, mode: str = "Soft Clip") -> np.ndarray:
         """Helper for band saturation."""
         if drive_db <= 0.05: return data # Save CPU
         
         drive_linear = 10 ** (drive_db / 20.0)
-        # Apply tanh saturation with auto-gain compensation to keep perceived level steady
-        return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)
+        
+        if mode == "Tape":
+            # Tape Saturation: Custom soft-knee sigmoid with 2nd harmonic richness
+            # We use a slightly modified sigmoid that has a 'warmer' transition
+            # than standard tanh.
+            x = data * drive_linear
+            # Sigmoid based saturation: x / (1 + |x|)
+            # Adding a tiny constant bias before saturation creates subtle even harmonics (analog feel)
+            bias = 0.005
+            saturated = (x + bias) / (1.0 + np.abs(x + bias)) - (bias / (1.0 + bias))
+            return saturated / (drive_linear * 0.7 + 0.3)
+        else:
+            # Standard Soft Clip (tanh)
+            return np.tanh(data * drive_linear) / (drive_linear * 0.8 + 0.2)
 
     def limit(self, audio_data: np.ndarray, ceiling_db: float = -1.0, lookahead_ms: float = 5.0) -> np.ndarray:
         """
