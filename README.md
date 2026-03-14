@@ -1,19 +1,81 @@
-# High-Fidelity Mastering Console v1
+# 🎙️ High-Fidelity Mastering Console v2
 
-A professional-grade, locally-hosted python audio mastering environment designed to deliver loud, clear, and competitively balanced tracks.
+A professional-grade, locally-hosted audio mastering environment designed to deliver loud, clear, and competitively balanced tracks. Optimized for modern music production with specific tools for 3D depth, harmonic richness, and reference-grade accuracy.
 
-## Core Features
+---
 
-- **64-bit Floating Point DSP Chain**: The entire audio processing pipeline operates in pure 64-bit precision (`np.float64`), offering virtually infinite headroom and preventing any internal digital clipping before the final output stage.
-- **Linear Phase EQ**: A specialized zero-phase-shift equalizer designed specifically for mastering. It allows you to add brilliant 'Air' (12kHz shelf) and tightly roll off sub-rumble without introducing phase smearing or artificial coloration.
-- **Analog-Style Soft Saturation**: Emulates the harmonic richness of analog gear using a tangential (`tanh`) soft-clipping drive curve, increasing perceived loudness without harsh, squared-off digital distortion.
-- **True Peak Limiter (4x Oversampled)**: Capable of catching inter-sample peaks (ISPs) that normal limiters miss, ensuring your audio strictly adheres to true-peak limits (e.g., -1.0 dBFS) across all playback systems.
-- **Broadcast-Standard Loudness (LUFS)**: Built-in ITU-R BS.1770-4 compliant loudness normalization guarantees your masters hit exact loudness targets (e.g., -14 LUFS for Spotify/YouTube) effortlessly upon export.
-- **Real-time A/B Previewing & Visualization**: Includes an immediate A/B toggle and a blazingly fast native-Tkinter waveform canvas to visually and audibly compare your dry and wet signals instantly.
-- **Dynamic Preset Manager**: Ships with 20 genre-tailored starting points (from Djent to Dream Pop) to instantly recall the perfect balance of Drive, EQ, and Target LUFS.
+## 🚀 Key Pro Features (The v2 Update)
 
-## Built With
-- `numpy` & `scipy`: For high-performance arrays and signal processing.
-- `pyloudnorm`: For standard-compliant loudness measurements.
-- `sounddevice`: For low-latency audio buffering and playback.
-- `tkinter`: For a lightweight, responsive, and native desktop GUI.
+### 1. **Intelligent Multi-Band Clipping**
+Instead of a "one-size-fits-all" saturation, the **Intelligent Mode** uses three localized algorithms:
+- **Hard Clipping (Low):** Instantaneous low-end peak truncation for drum punch without pumping.
+- **Harmonic Shimmer (High):** Power-law excitation for high-frequency brilliance and detail.
+- **Soft-Clip Warmth (Mid):** Smooth tanh saturation for vocal clarity and "analog" presence.
+
+### 2. **Preset Battle ⚔️**
+Stop guessing which setting is best. Select up to 4 different mastering presets and run a **Batch Battle**. The system will:
+- Master your track with all selected presets in the background.
+- Open a **Comparison Console** with high-resolution visualizers.
+- Provide **Synced Solo Playback**, allowing you to A/B/C/D compare versions at any point in the track with zero latency.
+
+### 3. **Asymmetric M/S Glue**
+Built for 3D depth. This system splits the audio into Mid (center) and Side (edges):
+- **Mid Channel:** High-ratio VCA compression to lock the kick and snare into a solid "spine."
+- **Side Channel:** Low-ratio, slow-release compression to let the guitars and spatial effects breathe and expand.
+
+### 4. **AI-Ready Matching EQ**
+Match your tonal balance to your favorite professional song. Import any WAV/MP3 reference track, and the engine will:
+- Mathematically analyze the target spectral signature.
+- Generate a custom Linear Phase FIR filter.
+- Apply the professional "curve" to your own track with a variable blend (0-100%).
+
+### 5. **Interactive Full-Song Navigator**
+The bottom of the UI features a "Full Song Visualizer." Click anywhere on the waveform silhouette to instantly seek to that point in the track. Perfect for fast navigation between the verse and the chorus.
+
+---
+
+## 🛠️ Core DSP Chain
+
+- **64-bit Internal Precision:** Operates in `float64` for virtually infinite headroom.
+- **True Peak Limiter:** 4x oversampling catches Inter-Sample Peaks to ensure compliance across all streaming platforms.
+- **Standard-Compliant LUFS:** Built-in ITU-R BS.1770-4 metering targets exact export levels (e.g., -14 LUFS).
+- **Zero-Latency A/B Switching:** Pre-cached buffers allow instant flipping between Dry and Wet signals without audio gaps.
+
+---
+
+## 🚦 Getting Started
+
+### Prerequisites
+- **Python 3.10+** (Recommend 12.x)
+- FFmpeg (Required for MP3/FLAC support via `pydub`/`ffmpeg`)
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/MasteringApp.git
+   cd MasteringApp
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Execution
+Simply run the diagnostic boot script:
+```powershell
+.\run.bat
+```
+
+---
+
+## 📦 Built With
+- **scipy / numpy:** High-performance signal processing.
+- **pyloudnorm:** ITU-standard loudness measurements.
+- **sounddevice:** Low-latency 32-bit float audio playback.
+- **Pillow:** Dynamic UI icons and asset rendering.
+- **librosa:** High-fidelity waveform analysis.
+
+---
+
+## 📜 License
+Distributable under the **MIT License**. Use it for your home studio or your professional label.
