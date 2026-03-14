@@ -5,7 +5,6 @@ import numpy as np
 from ui.theme import apply_dark_theme, Colors
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
-from ui.views.visualizer_view import VisualizerView
 
 class MainView(tk.Tk):
     """
@@ -26,27 +25,12 @@ class MainView(tk.Tk):
         
         # Layout Frames
         self.create_header()
-        self.create_tab_navbar()
         self.create_main_content()
         self.create_footer()
         
         # Start UI queue polling
         self.update_visualizer()
         
-    def create_tab_navbar(self):
-        nav_frame = ttk.Frame(self, style="Header.TFrame", height=40)
-        nav_frame.pack(side=tk.TOP, fill=tk.X)
-        nav_frame.pack_propagate(False)
-
-        self.tab_master_btn = ttk.Button(nav_frame, text="🎚 MASTERING", width=15)
-        self.tab_master_btn.pack(side=tk.LEFT, padx=(20, 5), pady=5)
-
-        self.tab_viz_btn = ttk.Button(nav_frame, text="🌌 VISUALIZER", width=15)
-        self.tab_viz_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
-        # Tab Switching Logic (implemented via local hide/show)
-        self.tab_master_btn.config(command=lambda: self.switch_tab("master"))
-        self.tab_viz_btn.config(command=lambda: self.switch_tab("visualizer"))
         
     def create_header(self):
         header_frame = ttk.Frame(self, style="Header.TFrame", height=60)
@@ -66,15 +50,9 @@ class MainView(tk.Tk):
         self.title_label = ttk.Label(header_frame, text="Mastering Console v1", style="Header.TLabel", font=("Segoe UI", 16, "bold"))
         self.title_label.pack(side=tk.RIGHT, padx=20, pady=15)
         
-        # Visualizer Controls
-        header_right = ttk.Frame(header_frame, style="Header.TFrame")
-        header_right.pack(side=tk.RIGHT, padx=10, pady=15)
-
-        self.vis_btn = ttk.Button(header_right, text="View: FFT", width=10)
-        self.vis_btn.pack(side=tk.LEFT, padx=5)
-        
-        self.toggle_vis_btn = ttk.Button(header_right, text="Vis: ON", width=8)
-        self.toggle_vis_btn.pack(side=tk.LEFT, padx=5)
+        # Status Label in header instead of viz controls
+        self.status_header_label = ttk.Label(header_frame, text="Ready", style="Header.TLabel", font=("Segoe UI", 10))
+        self.status_header_label.pack(side=tk.RIGHT, padx=20, pady=15)
         
     def create_main_content(self):
         # Container for the tabs
@@ -87,35 +65,30 @@ class MainView(tk.Tk):
 
         outer_frame = self.mastering_frame
 
-        # --- Top Panel: Visualizer ---
-        self.vis_panel = tk.Canvas(outer_frame, height=180, bg=Colors.BG_PANEL, highlightthickness=0)
-        self.vis_panel.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(15, 5))
-        
-        # Draw Background Grid & dB Scale
-        # 0dB (Top), -20dB, -40dB, -60dB, -80dB (Bottom)
-        db_markings = [0, -20, -40, -60, -80]
-        for db in db_markings:
-            # Scale -80...0 to 0...180 (canvas height)
-            ratio = (db + 80) / 80.0
-            y = 180 - (ratio * 180)
-            
-            # Subtle grid line
-            color = "#333333" if db != 0 else "#444444"
-            self.vis_panel.create_line(0, y, 900, y, fill=color, tags="grid")
-            
-            # dB Text
-            self.vis_panel.create_text(8, y + 8, text=f"{db}dB", fill="#666666", font=("Segoe UI", 7), anchor=tk.W, tags="grid")
-            
-        # Overlay mode labels
-        self.vis_panel.create_text(30, 15, text="FFT", fill=Colors.ACCENT_LIGHT, font=("Segoe UI", 8, "bold"), tags="mode_indicator")
         
         content_frame = ttk.Frame(outer_frame, style="Main.TFrame")
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        # --- Left Panel: Processing Controls ---
-        control_panel = ttk.Frame(content_frame, style="Panel.TFrame", width=600)
-        control_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-        control_panel.pack_propagate(False)
+        # --- Left Panel: Processing Controls with Scrollbar ---
+        control_panel_container = ttk.Frame(content_frame, style="Panel.TFrame")
+        control_panel_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        self.canvas_scroll = tk.Canvas(control_panel_container, bg=Colors.BG_PANEL, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(control_panel_container, orient="vertical", command=self.canvas_scroll.yview)
+        
+        self.scrollable_frame = ttk.Frame(self.canvas_scroll, style="Panel.TFrame")
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas_scroll.configure(scrollregion=self.canvas_scroll.bbox("all"))
+        )
+        
+        self.canvas_scroll.create_window((0, 0), window=self.scrollable_frame, anchor="nw", width=580)
+        self.canvas_scroll.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas_scroll.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        control_panel = self.scrollable_frame
         
         # Presets Section
         preset_frame = ttk.Frame(control_panel, style="Panel.TFrame")
@@ -287,22 +260,7 @@ class MainView(tk.Tk):
         self.meter_r.pack()
         ttk.Label(right_meter_frame, text="R", style="Panel.TLabel").pack(pady=5)
 
-        # --- TAB: Visualizer ---
-        self.visualizer_frame = VisualizerView(self.tab_container, self.controller)
-        self.visualizer_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-        # Show Mastering by default
-        self.switch_tab("master")
-
-    def switch_tab(self, tab_name):
-        if tab_name == "master":
-            self.mastering_frame.tkraise()
-            self.tab_master_btn.config(style="ActiveToggle.TButton")
-            self.tab_viz_btn.config(style="TButton")
-        else:
-            self.visualizer_frame.tkraise()
-            self.tab_master_btn.config(style="TButton")
-            self.tab_viz_btn.config(style="ActiveToggle.TButton")
 
     def create_footer(self):
         footer_frame = ttk.Frame(self, style="Header.TFrame", height=60)
@@ -354,116 +312,23 @@ class MainView(tk.Tk):
         self.export_btn = ttk.Button(export_right, text="Export Master", width=15)
         self.export_btn.pack(side=tk.LEFT)
 
-        # New: Visualizer Export Section
-        viz_frame = ttk.Frame(footer_frame, style="Header.TFrame")
-        viz_frame.pack(side=tk.RIGHT, padx=(20, 0), pady=15)
-
-        self.viz_render_btn = ttk.Button(viz_frame, text="🎥 Visualizer", width=15)
-        self.viz_render_btn.pack(side=tk.LEFT)
-        ToolTip(self.viz_render_btn, "Generate a 1080p MP4 visualizer \nfor YouTube using the mastered audio.")
 
     def update_visualizer(self):
         try:
             while not self.vis_queue.empty():
                 msg = self.vis_queue.get_nowait()
-                if msg['type'] == 'wave':
-                    if self.visual_mode == "WAVE":
-                        self.vis_panel.delete("fft") # Clear FFT if switching to wave
-                        self.draw_waveform(*msg['data'])
-                elif msg['type'] == 'meters':
+                if msg['type'] == 'meters':
                     rms_l, peak_l, rms_r, peak_r = msg['data']
                     self.meter_l.set_level(rms_l, peak_l)
                     self.meter_r.set_level(rms_r, peak_r)
                 elif msg['type'] == 'lufs':
                     self.meter_lufs.update_lufs(msg['data'])
-                elif msg['type'] == 'fft':
-                    if self.visual_mode == "FFT":
-                        self.vis_panel.delete("wave") # Clear wave if switching to FFT
-                        self.draw_fft(msg['data'])
                 elif msg['type'] == 'render_complete':
                     self.controller._on_render_complete(msg['data'])
                 elif msg['type'] == 'render_error':
                     self.controller._on_render_error(msg['data'])
-            
-            # Keep labels and grid in front of the visual data
-            self.vis_panel.tag_raise("grid")
-            self.vis_panel.tag_raise("mode_indicator")
         except Exception as e:
             pass
             
         self.after(30, self.update_visualizer)
         
-    def draw_waveform(self, dry_chunk, wet_chunk, listen_mode):
-        if not hasattr(self, 'vis_panel') or not self.vis_panel.winfo_exists():
-            return
-            
-        w = self.vis_panel.winfo_width()
-        h = self.vis_panel.winfo_height()
-        
-        if w < 10 or h < 10:
-            return
-            
-        self.vis_panel.delete("wave")
-        mid_y = h / 2
-        
-        if dry_chunk is not None and len(dry_chunk) > 0:
-            step = max(1, len(dry_chunk) // w)
-            plot_chunk_dry = dry_chunk[::step]
-            
-            coords_dry = []
-            for i, val in enumerate(plot_chunk_dry):
-                x = (i / len(plot_chunk_dry)) * w
-                y = mid_y - (val * mid_y * 0.9)
-                coords_dry.extend([x, y])
-            
-            if len(coords_dry) > 4:
-                alpha_col = "#666666" if listen_mode == "A" else "#444444"
-                self.vis_panel.create_line(coords_dry, fill=alpha_col, width=1, tags="wave")
-
-        if wet_chunk is not None and len(wet_chunk) > 0:
-            step = max(1, len(wet_chunk) // w)
-            plot_chunk_wet = wet_chunk[::step]
-            
-            coords_wet = []
-            for i, val in enumerate(plot_chunk_wet):
-                x = (i / len(plot_chunk_wet)) * w
-                y = mid_y - (val * mid_y * 0.9)
-                coords_wet.extend([x, y])
-                
-            if len(coords_wet) > 4:
-                alpha_col = "#FFB300" if listen_mode == "B" else "#886600"
-                self.vis_panel.create_line(coords_wet, fill=alpha_col, width=2, tags="wave")
-
-    def draw_fft(self, fft_data):
-        if not hasattr(self, 'vis_panel') or not self.vis_panel.winfo_exists():
-            return
-            
-        w = self.vis_panel.winfo_width()
-        h = self.vis_panel.winfo_height()
-        if w < 10 or h < 10: return
-
-        self.vis_panel.delete("fft")
-        
-        # fft_data is a tuple of (freq_mags, listen_mode)
-        mags, mode = fft_data
-        if len(mags) == 0: return
-
-        # Draw a beautiful gradient spectrum
-        num_bars = len(mags)
-        bar_w = w / num_bars
-        
-        color = "#00D2FF" if mode == "B" else "#555555"
-        
-        points = [0, h]
-        for i, mag in enumerate(mags):
-            x = i * bar_w
-            # Magnitude is already somewhat normalized, but let's scale for UI
-            y = h - (mag * h * 0.85)
-            points.extend([x, y])
-        points.extend([w, h])
-
-        if len(points) > 4:
-            # We use multiple polygons with different outlines/fills for a "Glow" effect
-            self.vis_panel.create_polygon(points, fill="#003344", outline="", tags="fft")
-            # The top line is the bright part
-            self.vis_panel.create_line(points[2:-2], fill=color, width=2, tags="fft")

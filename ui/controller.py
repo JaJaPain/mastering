@@ -25,31 +25,12 @@ class UIController:
         self.render_timer = None
         self.is_rendering = False
         
-        # --- Visualizer State (New Tab) ---
-        self.viz_logo_path = ""
-        self.viz_mark_path = ""
-        self.viz_external_audio = ""
-        self.use_external_audio = False
-        self.viz_color_a = "#00f2ff"
-        self.viz_color_b = "#7000ff"
-        self.viz_preview_engine = None
-        self.viz_preview_timer = None
-        self.viz_preview_loading = False
-        self.is_viz_rendering = False
-        
-        # Bind Visualizer View
-        self.bind_visualizer_controls()
-        
         self.visuals_enabled = True
-        self.vis_timer_id = None
         self.lufs_history = [] 
         self.fft_history = None # For smoothing the spectrogram
         
         self.view.export_btn.config(command=self.export_master)
         self.view.load_btn.config(command=self.load_audio_file)
-        self.view.toggle_vis_btn.config(command=self.toggle_visuals)
-        self.view.vis_btn.config(command=self.toggle_visual_mode)
-        self.view.viz_render_btn.config(command=self.render_youtube_visualizer)
         
         # Playback events
         self.view.play_btn.config(command=self.play_audio)
@@ -74,148 +55,10 @@ class UIController:
         self.refresh_presets()
         self.view.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
         self.view.save_preset_btn.config(command=self.on_save_preset)
-        self.view.match_btn.config(command=self.auto_match_loudness)
+        self.view.match_btn.config(command=self.auto_match_loudness, state="disabled")
+        from ui.components.tooltip import ToolTip
+        ToolTip(self.view.match_btn, "Please select a Genre Preset first\nto unlock Loudness Matching.")
         
-    def bind_visualizer_controls(self):
-        v = self.view.visualizer_frame
-        v.logo_btn.config(command=self.choose_viz_logo)
-        v.mark_btn.config(command=self.choose_viz_mark)
-        v.audio_btn.config(command=self.toggle_viz_audio_source)
-        v.color_a_btn.config(command=lambda: self.choose_viz_color("A"))
-        v.color_b_btn.config(command=lambda: self.choose_viz_color("B"))
-        
-        # Link Start/Reset
-        v.start_btn.config(command=self.render_youtube_visualizer)
-        v.reset_btn.config(command=self.reset_viz_preview)
-
-        # Bind Sliders for Live Preview
-        v.cycle_slider.external_cmd = self.on_viz_param_change
-        v.travel_slider.external_cmd = self.on_viz_param_change
-        v.rotate_slider.external_cmd = self.on_viz_param_change
-        v.shake_slider.external_cmd = self.on_viz_param_change
-        v.star_slider.external_cmd = self.on_viz_param_change
-
-    def reset_viz_preview(self):
-        self.viz_preview_engine = None
-        self.update_viz_preview()
-        self.view.visualizer_frame.status_label.config(text="NEBULA ENGINE RESET")
-
-    def on_viz_param_change(self, val=None):
-        if self.is_viz_rendering: return # Skip preview while rendering final video
-        if self.viz_preview_timer:
-            self.view.after_cancel(self.viz_preview_timer)
-        self.viz_preview_timer = self.view.after(200, self.update_viz_preview)
-
-    def update_viz_preview(self):
-        v = self.view.visualizer_frame
-        if not v.winfo_exists() or self.viz_preview_loading: return
-
-        # Determine Audio Source for Preview
-        audio_path = ""
-        if self.use_external_audio and self.viz_external_audio:
-            audio_path = self.viz_external_audio
-        elif not self.use_external_audio and self.loaded_file_path:
-            audio_path = self.loaded_file_path
-
-        if not audio_path or not os.path.exists(audio_path): return
-
-        def preview_worker():
-            try:
-                self.viz_preview_loading = True
-                from visualizer.engine import ProVisualizer
-                
-                viz_params = {
-                    'color_a': self.viz_color_a,
-                    'color_b': self.viz_color_b,
-                    'cycle_speed': float(v.cycle_slider.get()),
-                    'travel_speed': float(v.travel_slider.get()),
-                    'rotation_force': float(v.rotate_slider.get()),
-                    'shake_force': float(v.shake_slider.get()),
-                    'star_size': float(v.star_slider.get()),
-                    'logo_path': self.viz_logo_path,
-                    'mark_path': self.viz_mark_path,
-                    'resolution': (640, 360), 
-                    'fps': 30
-                }
-
-                # Initialize preview engine if needed
-                create_new = not self.viz_preview_engine or self.viz_preview_engine.audio_path != audio_path
-                if create_new:
-                    self.view.after(0, lambda: v.status_label.config(text="ANALYZING PREVIEW AUDIO..."))
-                    self.viz_preview_engine = ProVisualizer(audio_path, "", params=viz_params)
-                    self.viz_preview_engine.analyze_audio()
-                    self.view.after(0, lambda: v.status_label.config(text="NEBULA ENGINE READY"))
-                else:
-                    self.viz_preview_engine.params.update(viz_params)
-                    self.viz_preview_engine.logo_img = self.viz_preview_engine.load_asset(self.viz_logo_path)
-                    self.viz_preview_engine.mark_img = self.viz_preview_engine.load_asset(self.viz_mark_path)
-
-                # Draw frame
-                pil_img = self.viz_preview_engine.get_frame(10.0)
-                
-                def update_canvas(img):
-                    cw, ch = v.canvas.winfo_width(), v.canvas.winfo_height()
-                    if cw < 10: cw, ch = 900, 280
-                    resized = img.resize((cw, ch), Image.Resampling.BILINEAR)
-                    self.tk_preview_img = ImageTk.PhotoImage(resized)
-                    v.canvas.delete("all")
-                    v.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_preview_img)
-
-                self.view.after(0, lambda: update_canvas(pil_img))
-                
-            except Exception as e:
-                print(f"[PREVIEW ERROR] {e}")
-            finally:
-                self.viz_preview_loading = False
-
-        threading.Thread(target=preview_worker, daemon=True).start()
-
-    def choose_viz_logo(self):
-        path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg *.webp")])
-        if path:
-            self.viz_logo_path = path
-            self.view.visualizer_frame.logo_path_label.config(text=os.path.basename(path))
-            self.update_viz_preview()
-
-    def choose_viz_mark(self):
-        path = filedialog.askopenfilename(filetypes=[("PNG Files", "*.png")])
-        if path:
-            self.viz_mark_path = path
-            self.update_viz_preview()
-
-    def toggle_viz_audio_source(self):
-        self.use_external_audio = not self.use_external_audio
-        v = self.view.visualizer_frame
-        if self.use_external_audio:
-            path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.wav *.mp3 *.flac")])
-            if path:
-                self.viz_external_audio = path
-                v.audio_path_label.config(text=os.path.basename(path))
-                v.audio_btn.config(text="Use External")
-                self.update_viz_preview()
-            else:
-                self.use_external_audio = False # Revert
-        else:
-            v.audio_path_label.config(text="Current Session")
-            v.audio_btn.config(text="Use Mastered")
-            self.update_viz_preview()
-
-    def choose_viz_color(self, target):
-        from tkinter import colorchooser
-        color = colorchooser.askcolor(title=f"Choose Color {target}")[1]
-        if color:
-            # Calculate brightness to decide text color (white or black)
-            rgb = self.view.visualizer_frame.winfo_rgb(color)
-            brightness = (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) / 65535
-            fg = "black" if brightness > 0.5 else "white"
-
-            if target == "A":
-                self.viz_color_a = color
-                self.view.visualizer_frame.color_a_btn.config(bg=color, fg=fg)
-            else:
-                self.viz_color_b = color
-                self.view.visualizer_frame.color_b_btn.config(bg=color, fg=fg)
-            self.update_viz_preview()
         
     def refresh_presets(self):
         names = preset_manager.get_preset_names()
@@ -248,6 +91,12 @@ class UIController:
             self.view.mono_freq_val.config(text=f"{int(float(self.view.mono_freq_slider.get()))} Hz")
             self.view.mono_bypass_var.set(preset_data.get("mono_bypass", False))
             self.view.lufs_slider.set(preset_data.get("target_lufs", preset_data.get("Target LUFS", -14.0)))
+            
+            # Unlock Auto-Match once a preset (vibe) is chosen
+            self.view.match_btn.config(state="normal")
+            from ui.components.tooltip import ToolTip
+            ToolTip(self.view.match_btn, "Analyzes the whole song and automatically adjusts\nGain to hit your target LUFS exactly.")
+            
             self.trigger_render()
             
     def on_save_preset(self):
@@ -320,25 +169,6 @@ class UIController:
             if self.wet_audio is not None:
                 self.player.set_buffer(self.wet_audio, self.sample_rate)
 
-    def toggle_visual_mode(self):
-        if self.view.visual_mode == "FFT":
-            self.view.visual_mode = "WAVE"
-        else:
-            self.view.visual_mode = "FFT"
-        self.view.vis_btn.config(text=f"View: {self.view.visual_mode}")
-        self.view.vis_panel.delete("fft", "wave")
-
-    def toggle_visuals(self):
-        self.visuals_enabled = not self.visuals_enabled
-        state_text = "ON" if self.visuals_enabled else "OFF"
-        self.view.toggle_vis_btn.config(text=f"Vis: {state_text}")
-        
-        if self.visuals_enabled:
-            self._sample_wave_loop()
-        else:
-            if self.vis_timer_id is not None:
-                self.view.after_cancel(self.vis_timer_id)
-                self.vis_timer_id = None
                 
     def _sample_wave_loop(self):
         if not self.visuals_enabled:
@@ -349,23 +179,16 @@ class UIController:
                 chunk_size = 2048
                 frame = self.player.current_frame
                 
-                # Fetch Audio
-                dry_slice = self.dry_audio[frame:frame+chunk_size]
-                dry_mono = np.mean(dry_slice, axis=1) if dry_slice.shape[1] > 1 else dry_slice[:, 0]
-                dry_mono = np.nan_to_num(dry_mono, nan=0.0, posinf=0.0, neginf=0.0)
-                
-                wet_slice = None
-                wet_mono = None
-                if self.wet_audio is not None and len(self.wet_audio) > frame:
-                    wet_slice = self.wet_audio[frame:frame+chunk_size]
-                    wet_mono = np.mean(wet_slice, axis=1) if wet_slice.shape[1] > 1 else wet_slice[:, 0]
-                    wet_mono = np.nan_to_num(wet_mono, nan=0.0, posinf=0.0, neginf=0.0)
-                
                 # Pipe cleanly padded array into thread queue
-                self.view.vis_queue.put({'type': 'wave', 'data': (dry_mono, wet_mono, self.listen_mode)})
+                # Waveform is removed as per user request (Mastering Only)
+                pass
 
                 # --- LIVE PEAK METERS ---
                 # This makes the L/R meters dance while the music plays!
+                # We need to re-fetch slices because I commented out the previous ones for clarity
+                dry_slice = self.dry_audio[frame:frame+chunk_size]
+                wet_slice = self.wet_audio[frame:frame+chunk_size] if (self.wet_audio is not None and len(self.wet_audio) > frame+chunk_size) else None
+                
                 active_slice = wet_slice if (self.listen_mode == "B" and wet_slice is not None) else dry_slice
                 if active_slice is not None and len(active_slice) > 0:
                     def get_metrics(chn):
@@ -401,47 +224,6 @@ class UIController:
                         except:
                             pass
                 
-                # --- LIVE SPECTROGRAM (FFT) ---
-                # We calculate the frequency spectrum of the currently audible signal
-                active_mono = wet_mono if (self.listen_mode == "B" and wet_mono is not None) else dry_mono
-                
-                if active_mono is not None and len(active_mono) > 512:
-                    try:
-                        # Use a Hanning window to prevent spectral leakage
-                        window = np.hanning(len(active_mono))
-                        windowed_audio = active_mono * window
-                        
-                        # Compute real-FFT and NORMALIZE by window length to avoid maxing out
-                        fft_vals = np.abs(np.fft.rfft(windowed_audio)) / (len(windowed_audio) / 2)
-                        
-                        # Downsample/Group bins into a logarithmic scale (Human hearing)
-                        num_ui_bars = 64
-                        log_bins = np.logspace(0, np.log10(len(fft_vals)-1), num_ui_bars + 1).astype(int)
-                        
-                        buckets = []
-                        for i in range(num_ui_bars):
-                            start, end = log_bins[i], log_bins[i+1]
-                            if end <= start: end = start + 1
-                            val = np.mean(fft_vals[start:end])
-                            buckets.append(val)
-                        
-                        buckets = np.array(buckets)
-                        
-                        # Professional Logarithmic amplitude scaling (-80dB floor)
-                        # This avoids the "Ceiling hitting" effect
-                        buckets = 20 * np.log10(buckets + 1e-10)
-                        buckets = (buckets + 80) / 80.0 # Map -80...0 to 0...1
-                        buckets = np.clip(buckets, 0.0, 1.0)
-                        
-                        # Smoothing (Exponential moving average)
-                        if self.fft_history is None or len(self.fft_history) != len(buckets):
-                            self.fft_history = buckets
-                        else:
-                            self.fft_history = 0.6 * self.fft_history + 0.4 * buckets
-                        
-                        self.view.vis_queue.put({'type': 'fft', 'data': (self.fft_history.tolist(), self.listen_mode)})
-                    except:
-                        pass
         except Exception as e:
             pass
             
@@ -607,115 +389,6 @@ class UIController:
                 messagebox.showerror("Export Error", f"Failed to start export:\n{e}")
                 self.view.status_label.config(text="Export failed.")
 
-    def render_youtube_visualizer(self):
-        """
-        Triggers the 1080p Visualizer render process for the current mastered track.
-        """
-        # Determine Audio Source
-        if self.use_external_audio:
-            if not self.viz_external_audio:
-                messagebox.showwarning("Visualizer", "Please choose an external audio file first!")
-                return
-            audio_path = self.viz_external_audio
-            # No need to render anything if using external
-        else:
-            if self.wet_audio is None:
-                messagebox.showwarning("Visualizer", "Please load and render a mastered file first!")
-                return
-            # We'll need a temp wav for the current session audio
-            temp_wav = os.path.join(os.path.dirname(self.loaded_file_path), "temp_master_viz.wav")
-            audio_path = temp_wav
-
-        # 1. Ask where to save the MP4
-        orig_name = os.path.basename(self.loaded_file_path if not self.use_external_audio else self.viz_external_audio)
-        name_no_ext = os.path.splitext(orig_name)[0]
-        default_save = f"Visualizer_{name_no_ext}.mp4"
-        
-        save_path = filedialog.asksaveasfilename(
-            title="Save YouTube Visualizer",
-            initialfile=default_save,
-            defaultextension=".mp4",
-            filetypes=(("MP4 Video", "*.mp4"), ("All Files", "*.*"))
-        )
-        
-        if not save_path:
-            return
-
-        self.is_viz_rendering = True
-        self.view.visualizer_frame.status_label.config(text="RECORDING NEBULA SEQUENCE...")
-        self.view.viz_render_btn.config(state="disabled")
-
-        def viz_thread():
-            try:
-                # 2. Extract visualizer params from sliders
-                v = self.view.visualizer_frame
-                viz_params = {
-                    'color_a': self.viz_color_a,
-                    'color_b': self.viz_color_b,
-                    'cycle_speed': float(v.cycle_slider.get()),
-                    'travel_speed': float(v.travel_speed.get()) if hasattr(v, 'travel_speed') else float(v.travel_slider.get()),
-                    'rotation_force': float(v.rotate_slider.get()),
-                    'shake_force': float(v.shake_slider.get()),
-                    'star_size': float(v.star_slider.get()),
-                    'logo_path': self.viz_logo_path,
-                    'mark_path': self.viz_mark_path,
-                    'resolution': (1920, 1080),
-                    'fps': 60
-                }
-
-                # 3. Create temp wav if using session audio
-                if not self.use_external_audio:
-                    params = {
-                        'input_gain_db': float(self.view.gain_slider.get()),
-                        'air_gain_db': float(self.view.air_slider.get()),
-                        'stereo_width_db': float(self.view.width_slider.get()),
-                        'drive_low_db': float(self.view.drive_low_slider.get()),
-                        'drive_mid_db': float(self.view.drive_mid_slider.get()),
-                        'drive_high_db': float(self.view.drive_high_slider.get()),
-                        'exciter_bypass': self.view.exciter_bypass_var.get(),
-                        'saturation_mode': self.view.sat_mode_combo.get(),
-                        'mono_freq': float(self.view.mono_freq_slider.get()),
-                        'mono_bypass': self.view.mono_bypass_var.get(),
-                        'target_lufs': float(self.view.lufs_slider.get())
-                    }
-                    self.view.after(0, lambda: self.view.visualizer_frame.status_label.config(text="PREPARING MASTER AUDIO..."))
-                    final_audio = self.processor.process(self.dry_audio, **params)
-                    write_audio(temp_wav, self.sample_rate, final_audio, format='WAV', subtype='PCM_24')
-
-                # 4. Engine Run
-                self.view.after(0, lambda: self.view.visualizer_frame.status_label.config(text="RENDERING 1080p NEBULA SEQUENCE (Est. 10-15m)..."))
-                from visualizer.engine import ProVisualizer
-                viz = ProVisualizer(audio_path, save_path, params=viz_params)
-                viz.export()
-                
-                # Cleanup
-                if not self.use_external_audio and os.path.exists(temp_wav):
-                    os.remove(temp_wav)
-                
-                def on_success():
-                    self.is_viz_rendering = False
-                    self.view.visualizer_frame.status_label.config(text="RENDER COMPLETE")
-                    self.view.viz_render_btn.config(state="normal")
-                    messagebox.showinfo("Success", f"YouTube Visualizer Exported!\n{save_path}")
-
-                self.view.after(0, on_success)
-
-            except Exception as e:
-                self.is_viz_rendering = False
-                import traceback
-                traceback.print_exc()
-                try:
-                    if 'temp_wav' in locals() and os.path.exists(temp_wav):
-                        os.remove(temp_wav)
-                except: pass
-                
-                def on_fail(msg):
-                    self.view.visualizer_frame.status_label.config(text="ENGINE FAILURE")
-                    self.view.viz_render_btn.config(state="normal")
-                    messagebox.showerror("Visualizer Error", f"Render Failed:\n{msg}")
-                self.view.after(0, lambda m=str(e): on_fail(m))
-
-        threading.Thread(target=viz_thread, daemon=True).start()
 
     def auto_match_loudness(self):
         """

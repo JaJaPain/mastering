@@ -17,7 +17,14 @@ class LevelMeter(tk.Canvas):
         # Draw background trough
         self.create_rectangle(0, 0, width, height, fill=Colors.BG_HEADER, outline=Colors.BG_MAIN)
         
+        # Brick Wall LED (Small box at the top)
+        self.clip_led_height = 10
+        self.clip_led = self.create_rectangle(0, 0, width, self.clip_led_height, fill="#330000", outline=Colors.BG_MAIN)
+        self.clip_timer = None
+        
         # The physical meter bar (starts fully empty / min_db)
+        # We start the bar below the LED
+        self.bar_top_limit = self.clip_led_height + 2
         self.bar = self.create_rectangle(0, height, width, height, fill=Colors.METER_SAFE, outline="")
         
         # Peak hold indicator
@@ -37,18 +44,20 @@ class LevelMeter(tk.Canvas):
         if current_db < self.min_db:
             current_db = self.min_db
             
-        # Linear interpolation for meter height
+        # Linear interpolation for meter height (excluding the LED area)
+        usable_height = self.meter_height - self.bar_top_limit
         db_range = self.max_db - self.min_db
         level_ratio = (current_db - self.min_db) / db_range
         
         # Clamp ratio
         level_ratio = max(0.0, min(1.0, level_ratio))
         
-        y_pos = self.meter_height - (level_ratio * self.meter_height)
+        y_pos = self.meter_height - (level_ratio * usable_height)
         
         # Determine color based on level
-        if current_db > -1.0:
+        if current_db >= -0.1: # Brick wall hit
             fill_color = Colors.METER_CLIP
+            self.trigger_clip_led()
         elif current_db > -6.0:
             fill_color = Colors.METER_WARN
         else:
@@ -64,8 +73,19 @@ class LevelMeter(tk.Canvas):
                 peak_db = self.min_db
             peak_ratio = (peak_db - self.min_db) / db_range
             peak_ratio = max(0.0, min(1.0, peak_ratio))
-            peak_y_pos = self.meter_height - (peak_ratio * self.meter_height)
+            peak_y_pos = self.meter_height - (peak_ratio * usable_height)
             self.coords(self.peak_line, 0, peak_y_pos, self.meter_width, peak_y_pos)
+
+    def trigger_clip_led(self):
+        """Turns the LED bright red and sets a timer to turn it off."""
+        self.itemconfig(self.clip_led, fill="#FF0000")
+        if self.clip_timer:
+            self.after_cancel(self.clip_timer)
+        self.clip_timer = self.after(1500, self.reset_clip_led)
+
+    def reset_clip_led(self):
+        self.itemconfig(self.clip_led, fill="#330000")
+        self.clip_timer = None
 
     def set_target(self, target_db: float):
         """Draws a static target line on the meter (e.g. -14 LUFS)."""
