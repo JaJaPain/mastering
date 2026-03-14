@@ -167,6 +167,18 @@ class MainView(tk.Tk):
         self.width_slider.set(0.0)
         self.width_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
+        # Master Glue Slider (3D Depth)
+        glue_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        glue_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        lbl_glue = ttk.Label(glue_frame, text="Master Glue (dB)", style="Panel.TLabel", width=15)
+        lbl_glue.pack(side=tk.LEFT)
+        ToolTip(lbl_glue, "Applies Asymmetric M/S Compression.\nGlues the center (Mid) while letting the outer edges (Side) breathe.")
+        
+        self.glue_slider = ttk.Scale(glue_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.glue_slider.set(0.0)
+        self.glue_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        
         # Multi-Band Exciter Section
         exciter_header = ttk.Frame(control_panel, style="Panel.TFrame")
         exciter_header.pack(fill=tk.X, padx=20, pady=(10, 5))

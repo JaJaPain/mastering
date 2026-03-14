@@ -19,7 +19,8 @@ class AudioProcessor:
                 target_lufs: float = None, exciter_bypass: bool = False,
                 mono_freq: float = 150.0, mono_bypass: bool = False,
                 stereo_width_db: float = 0.0, saturation_mode: str = "Soft Clip",
-                match_eq_fir: np.ndarray = None, match_amount: float = 1.0) -> np.ndarray:
+                match_eq_fir: np.ndarray = None, match_amount: float = 1.0,
+                glue_db: float = 0.0) -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -58,13 +59,23 @@ class AudioProcessor:
             # 2. Targeted Processing
             
             # Linear Phase EQ (Air Shelf targeted strictly on the Side Channel for width)
-            # We keep the Mid channel 'flat' for EQ, just filtering out extreme sub rumble
             mid = self.linear_phase_eq(mid, air_gain_db=0.0)
             side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
 
-            # Stereo Widening (Side Gain adjustment)
+            # Stereo Widening
             if stereo_width_db != 0.0:
                 side = self.apply_stereo_width(side, stereo_width_db)
+
+            # --- ASYMMETRIC M/S COMPRESSION (Glue) ---
+            if glue_db > 0.0:
+                # Mid Channel: Heavy Punch (High ratio, fast-ish attack)
+                # We translate glue_db into a threshold. 0-12dB range.
+                mid_threshold = -12.0 - glue_db 
+                mid = self.compressor_vca(mid, threshold_db=mid_threshold, ratio=4.0, attack_ms=15.0, release_ms=120.0)
+                
+                # Side Channel: Breathy Air (Low ratio, slow release)
+                side_threshold = -18.0 - (glue_db / 2.0)
+                side = self.compressor_vca(side, threshold_db=side_threshold, ratio=1.5, attack_ms=30.0, release_ms=250.0)
 
             # Multi-Band Harmonic Exciter (Saturation)
             if not exciter_bypass:
@@ -316,6 +327,57 @@ class AudioProcessor:
             return np.vstack((out_l, out_r)).T
         else:
             return signal.filtfilt(blended_fir, [1.0], audio_data, axis=0)
+
+    def compressor_vca(self, audio_data: np.ndarray, threshold_db: float = -12.0, 
+                       ratio: float = 2.0, attack_ms: float = 10.0, 
+                       release_ms: float = 100.0) -> np.ndarray:
+        """
+        A high-fidelity VCA-style compressor with a soft knee.
+        Uses a recursive envelope follower for smooth gain reduction.
+        """
+        if ratio <= 1.0: return audio_data
+        
+        # Convert constants
+        threshold_linear = 10 ** (threshold_db / 20.0)
+        
+        # Envelope follower coefficients
+        # alpha = 1 - exp(-1 / (fs * time))
+        att_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (attack_ms / 1000.0)))
+        rel_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (release_ms / 1000.0)))
+        
+        # Detect signal level (Rectified)
+        det = np.max(np.abs(audio_data), axis=1) if audio_data.ndim > 1 else np.abs(audio_data).flatten()
+        
+        # Envelope following
+        envelope = np.zeros_like(det)
+        curr_env = 0.0
+        for i in range(len(det)):
+            target = det[i]
+            alpha = att_alpha if target > curr_env else rel_alpha
+            curr_env += alpha * (target - curr_env)
+            envelope[i] = curr_env
+            
+        # Calculate Gain Reduction
+        # GR (dB) = - (1 - 1/ratio) * (Env_dB - Threshold_dB) if Env_dB > Threshold_dB
+        env_db = 20 * np.log10(envelope + 1e-10)
+        
+        gain_reduction_db = np.zeros_like(env_db)
+        over_bool = env_db > threshold_db
+        gain_reduction_db[over_bool] = -(1.0 - 1.0 / ratio) * (env_db[over_bool] - threshold_db)
+        
+        # Soft-Knee Smoothing (3dB knee)
+        knee_db = 3.0
+        knee_indices = (env_db > (threshold_db - knee_db)) & (env_db < (threshold_db + knee_db))
+        # Simple parabolic knee
+        gain_reduction_db[knee_indices] *= ((env_db[knee_indices] - (threshold_db - knee_db)) / (2 * knee_db))**2
+        
+        gain_linear = 10 ** (gain_reduction_db / 20.0)
+        
+        # Reshape gain to match audio data for broadcasting
+        if audio_data.ndim > 1:
+            gain_linear = gain_linear.reshape(-1, 1)
+            
+        return audio_data * gain_linear
 
     def limit(self, audio_data: np.ndarray, ceiling_db: float = -1.0, lookahead_ms: float = 5.0) -> np.ndarray:
         """

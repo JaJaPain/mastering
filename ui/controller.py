@@ -50,6 +50,7 @@ class UIController:
         self.view.gain_slider.config(command=self.on_slider_change)
         self.view.air_slider.config(command=self.on_slider_change)
         self.view.width_slider.config(command=self.on_slider_change)
+        self.view.glue_slider.config(command=self.on_slider_change)
         self.view.match_amount_slider.config(command=self.on_slider_change)
         self.view.drive_low_slider.config(command=self.on_slider_change)
         self.view.drive_mid_slider.config(command=self.on_slider_change)
@@ -381,7 +382,9 @@ class UIController:
             'mono_freq': float(self.view.mono_freq_slider.get()),
             'mono_bypass': self.view.mono_bypass_var.get(),
             'match_eq_fir': self.match_fir_coeff,
-            'match_amount': float(self.view.match_amount_slider.get()) / 100.0
+            'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
+            'target_lufs': float(self.view.lufs_slider.get()),
+            'glue_db': float(self.view.glue_slider.get())
         }
         
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
@@ -621,8 +624,9 @@ class UIController:
                     'mono_freq': float(p_data.get('mono_freq', 150.0 if use_spatial else 20.0)),
                     'mono_bypass': bool(p_data.get('mono_bypass', False)) if not use_spatial else False,
                     'match_eq_fir': self.match_fir_coeff,
-                    'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
-                    'target_lufs': target_lufs
+                    'match_amount': float(p_data.get('match_amount', float(self.view.match_amount_slider.get()))) / 100.0,
+                    'target_lufs': float(p_data.get('target_lufs', target_lufs)),
+                    'glue_db': float(p_data.get('glue', p_data.get('glue_db', float(self.view.glue_slider.get()))))
                 }
                 
                 # Perform the master
