@@ -41,8 +41,21 @@ def get_preset(name):
 def save_custom_preset(name, data):
     """Adds or updates a preset and saves it to disk."""
     presets = load_presets()
+    data["is_custom"] = True # Mark as user-created
     if "presets" in presets:
         presets["presets"][name] = data
     else:
         presets[name] = data
     return save_presets(presets)
+
+def delete_preset(name):
+    """Removes a preset from disk."""
+    presets = load_presets()
+    if "presets" in presets:
+        if name in presets["presets"]:
+            del presets["presets"][name]
+            return save_presets(presets)
+    elif name in presets:
+        del presets[name]
+        return save_presets(presets)
+    return False

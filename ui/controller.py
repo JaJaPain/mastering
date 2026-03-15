@@ -1,6 +1,7 @@
 import threading
 import os
 import queue
+import random
 import numpy as np
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -389,6 +390,42 @@ class UIController:
         
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
         
+    EXPORT_SUCCESS_MESSAGES = [
+        "Masterpiece delivered. Go grab a coffee!",
+        "The listeners aren't ready for how good this sounds.",
+        "Export successful. This one’s a banger!",
+        "Sonic gold safely tucked into your folder.",
+        "Mastering complete. Your fans are going to love this.",
+        "Polished, loud, and ready for the airwaves!",
+        "Transients preserved. Bass tightened. Let's go!",
+        "Mission accomplished. That mix is officially glued.",
+        "Another hit in the books. Great work!",
+        "Exported and ready to dominate the charts.",
+        "The sonic sculpture is complete. It looks... err, sounds beautiful.",
+        "Spotify isn't ready for this level of fire.",
+        "Smooth as butter and twice as loud.",
+        "Final master rendered. Go turn it up!",
+        "Your ears deserve a vacation after this one.",
+        "Mastering magic applied. It’s a wrap!",
+        "The low end is now legal in all 50 states.",
+        "Export finished. Time to upload and celebrate.",
+        "That's a wrap! The sonics are sublime.",
+        "Crystal clear and competitively loud. Perfect.",
+        "Mastered to perfection. Don't forget us when you're famous.",
+        "The ghosts in the machine approve of this master.",
+        "Rendering complete. Sonic excellence achieved.",
+        "Your track just graduated from the Mastering Academy.",
+        "Wrapped up and ready to rumble.",
+        "Loud, proud, and safely exported.",
+        "The transients called—they wanted to say thanks.",
+        "Bit-perfect and ready for the world.",
+        "Mastering complete. Status: Legendary.",
+        "Another sonic victory. Well played!",
+        "Exported! Now go listen in your car for the final test.",
+        "Mastering finished. Go treat your ears to something nice.",
+        "That's some high-fidelity heat right there. Done!"
+    ]
+
     def _render_task(self, params):
         try:
             # Processor now handles mono/stereo internally
@@ -497,7 +534,8 @@ class UIController:
                             
                         write_audio(save_path, self.sample_rate, final_audio, format=export_fmt, subtype=subtype)
                         self.view.after(0, lambda: self.view.status_label.config(text=f"Exported to {os.path.basename(save_path)}"))
-                        self.view.after(0, lambda: messagebox.showinfo("Success", "Mastering Export Complete!"))
+                        msg = random.choice(self.EXPORT_SUCCESS_MESSAGES)
+                        self.view.after(0, lambda m=msg: messagebox.showinfo("Success", m))
                     except Exception as err:
                         self.view.after(0, lambda e=err: messagebox.showerror("Export Error", f"Failed to save:\n{e}"))
                         

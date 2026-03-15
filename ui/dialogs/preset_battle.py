@@ -7,54 +7,141 @@ from ui.theme import Colors
 from ui.components.detailed_waveform import DetailedWaveform
 from ui.components.range_slider import RangeSlider
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
+from engine.io import preset_manager
 
 class PresetBattleDialog(tk.Toplevel):
     """Dialog to select up to 4 presets for comparison."""
     def __init__(self, parent, preset_names, on_start_callback):
         super().__init__(parent)
         self.title("Preset Battle - Select Challengers")
-        self.geometry("600x600")
         self.preset_names = preset_names
         self.on_start_callback = on_start_callback
         self.selected_presets = []
+        self.presets_data = preset_manager.load_presets().get("presets", {})
         
         self.configure(bg=Colors.BG_MAIN)
         self.transient(parent)
         self.grab_set()
+
+        # --- Smart Sizing ---
+        # Calculate height based on rows needed (2 presets per row)
+        HEADER_H = 80   # title
+        FOOTER_H = 130  # spatial check + button + padding
+        ROW_H    = 42   # height of each preset row (with padding)
+        n_rows   = (len(preset_names) + 1) // 2
+        ideal_h  = HEADER_H + (n_rows * ROW_H) + FOOTER_H
+
+        # Cap at 90% of screen height 
+        screen_h = self.winfo_screenheight()
+        max_h    = int(screen_h * 0.90)
+        win_h    = min(ideal_h, max_h)
+        
+        self.needs_scroll = ideal_h > max_h  # Only scroll if content overflows
+        
+        self.geometry(f"660x{win_h}")
+        self.resizable(False, True)
         
         self.setup_ui()
 
     def setup_ui(self):
         ttk.Label(self, text="Select up to 4 presets to compare:", font=("Segoe UI", 12, "bold")).pack(pady=20)
         
-        # Grid frame for presets
-        list_frame = ttk.Frame(self, style="Panel.TFrame")
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=20)
-        
-        # Configure columns to be equal width
-        list_frame.columnconfigure(0, weight=1)
-        list_frame.columnconfigure(1, weight=1)
-        
-        self.vars = {}
-        for i, name in enumerate(self.preset_names):
-            var = tk.BooleanVar()
-            self.vars[name] = var
-            chk = ttk.Checkbutton(list_frame, text=name, variable=var, command=self.check_limit)
-            row = i // 2
-            col = i % 2
-            chk.grid(row=row, column=col, sticky="w", pady=2, padx=10)
-
-        btn_frame = ttk.Frame(self, style="Panel.TFrame")
-        btn_frame.pack(fill=tk.X, pady=10)
+        # Bottom controls packed FIRST to anchor them at the bottom
+        btm_frame = ttk.Frame(self, style="Panel.TFrame")
+        btm_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=20)
         
         # Spatial Enhancement Toggle
         self.spatial_var = tk.BooleanVar(value=True)
-        self.spatial_chk = ttk.Checkbutton(btn_frame, text="Apply Pro Spatial Enhancements (Stereo Width + Mono Bass)", 
+        spatial_chk = ttk.Checkbutton(btm_frame, text="Apply Pro Spatial Enhancements (Stereo Width + Mono Bass)", 
                                            variable=self.spatial_var)
-        self.spatial_chk.pack(pady=10)
+        spatial_chk.pack(pady=5)
         
-        self.start_btn = ttk.Button(btn_frame, text="Start Battle!", state="disabled", command=self.on_start)
-        self.start_btn.pack(pady=(0, 20))
+        # Center the start button
+        self.start_btn = ttk.Button(btm_frame, text="Start Battle!", state="disabled", command=self.on_start)
+        self.start_btn.pack(pady=10)
+
+        # Main content area uses remaining space
+        content_frame = tk.Frame(self, bg=Colors.BG_MAIN)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20)
+
+        # Scrollable area for many presets
+        canvas = tk.Canvas(content_frame, bg=Colors.BG_MAIN, highlightthickness=0)
+        scroll_frame = ttk.Frame(canvas, style="Panel.TFrame")
+        
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        if self.needs_scroll:
+            scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=scrollbar.set)
+            canvas_w = 580  # slightly narrower to leave room for scrollbar
+            
+            # Mousewheel only active when scroll is needed
+            def _on_mousewheel(event):
+                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        else:
+            canvas_w = 620  # full width, no scrollbar
+        
+        canvas.create_window((0,0), window=scroll_frame, anchor="nw", width=canvas_w)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Grid frame for presets inside scroll_frame
+        list_grid = ttk.Frame(scroll_frame, style="Panel.TFrame")
+        list_grid.pack(fill=tk.BOTH, expand=True)
+        
+        list_grid.columnconfigure(0, weight=1)
+        list_grid.columnconfigure(1, weight=1)
+        
+        from ui.components.tooltip import ToolTip
+        
+        self.vars = {}
+        for i, name in enumerate(self.preset_names):
+            data = self.presets_data.get(name, {})
+            is_custom = data.get("is_custom", False)
+            
+            # Container for each preset line to allow delete button
+            item_frame = tk.Frame(list_grid, bg=Colors.BG_PANEL)
+            row = i // 2
+            col = i % 2
+            item_frame.grid(row=row, column=col, sticky="nsew", pady=5, padx=10)
+            
+            var = tk.BooleanVar()
+            self.vars[name] = var
+            
+            # Use different color for custom presets
+            text_color = "#00D2FF" if is_custom else Colors.TEXT_PRIMARY
+            
+            chk = tk.Checkbutton(item_frame, text=name, variable=var, 
+                                 bg=Colors.BG_PANEL, fg=text_color, 
+                                 selectcolor=Colors.BG_HEADER,
+                                 activebackground=Colors.BG_PANEL,
+                                 activeforeground=text_color,
+                                 font=("Segoe UI", 10),
+                                 command=self.check_limit)
+            chk.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            if is_custom:
+                # Add small delete button only for custom presets
+                del_btn = tk.Button(item_frame, text="✕", font=("Segoe UI", 7, "bold"),
+                                   bg="#444444", fg="#FF4444", borderwidth=0,
+                                   command=lambda n=name: self.delete_preset_ui(n))
+                del_btn.pack(side=tk.RIGHT, padx=5)
+                ToolTip(del_btn, f"Delete custom preset: {name}")
+
+    def delete_preset_ui(self, name):
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete the '{name}' preset?"):
+            if preset_manager.delete_preset(name):
+                # Refresh UI
+                self.preset_names.remove(name)
+                # Cleanup and rebuild - simplest way to refresh a complex scrollable grid
+                for widget in self.winfo_children():
+                    widget.destroy()
+                self.selected_presets = []
+                self.vars = {}
+                self.presets_data = preset_manager.load_presets().get("presets", {})
+                self.setup_ui()
 
     def check_limit(self):
         selected = [name for name, var in self.vars.items() if var.get()]
