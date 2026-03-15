@@ -13,6 +13,7 @@ from engine.io.playback import AudioPlayer
 from engine.io import preset_manager
 from ui.dialogs.preset_battle import PresetBattleDialog, BatchProgressWindow, ComparisonConsole
 from ui.components.tooltip import ToolTip
+from engine.io import spectral_profiles
 
 class UIController:
     def __init__(self):
@@ -28,6 +29,7 @@ class UIController:
         self.render_timer = None
         self.is_rendering = False
         self.match_fir_coeff = None
+        self.ref_audio_data = None   # Stored for profile capture
         
         # Player-ready caches (float32, contiguous) for zero-latency A/B switching
         self.player_ready_dry = None
@@ -71,7 +73,10 @@ class UIController:
         
         self.view.load_ref_btn.config(command=self.load_reference_track)
         self.view.clear_ref_btn.config(command=self.clear_reference_track)
+        self.view.capture_profile_btn.config(command=self.capture_reference_profile)
+        self.view.load_profile_btn.config(command=self.apply_profile)
         self.view.waveform_seeker.on_seek_callback = self.seek_audio
+        self.refresh_profiles()
         
         
     def refresh_presets(self):
@@ -155,16 +160,16 @@ class UIController:
             def analyze_task():
                 try:
                     sr, ref_data = read_audio(file_path)
-                    # Resample if needed would be complex, assume 44.1 for now or handle in processor
-                    # Processor handles basic spectral matching
                     fir = self.processor.calculate_matching_fir(ref_data, self.dry_audio)
                     
                     def update_ui():
                         self.match_fir_coeff = fir
+                        self.ref_audio_data = ref_data          # Store for profile capture
+                        self._last_ref_path = file_path         # Store path for metadata
                         self.view.match_status_label.config(text=os.path.basename(file_path), foreground="#00D2FF")
                         self.view.match_amount_slider.state(['!disabled'])
                         if self.view.match_amount_slider.get() == 0:
-                            self.view.match_amount_slider.set(50.0) # Start with 50% match
+                            self.view.match_amount_slider.set(50.0)
                         self.view.load_ref_btn.config(state="normal")
                         self.view.status_label.config(text="Match Balanced")
                         self.trigger_render()
@@ -175,6 +180,90 @@ class UIController:
                     self.view.after(0, lambda: self.view.load_ref_btn.config(state="normal"))
 
             threading.Thread(target=analyze_task, daemon=True).start()
+
+    def capture_reference_profile(self):
+        """Save the currently loaded reference track's LTAS as a reusable profile."""
+        if self.ref_audio_data is None:
+            messagebox.showwarning("No Reference Loaded",
+                "Please load a Reference Track first using 'Select Reference Track...' before capturing.")
+            return
+
+        import tkinter.simpledialog as sd
+        name = sd.askstring("Save Spectral Profile",
+            "Enter a name for this spectral fingerprint:\n(e.g. 'Billie Eilish - Happier Than Ever')")
+        if not name:
+            return
+
+        def capture_task():
+            try:
+                freqs, ltas_db = self.processor.extract_ltas(self.ref_audio_data)
+                ok = spectral_profiles.save_profile(
+                    name, freqs, ltas_db,
+                    sample_rate=self.sample_rate,
+                    source_file=getattr(self, '_last_ref_path', '')
+                )
+                def done():
+                    if ok:
+                        self.refresh_profiles()
+                        messagebox.showinfo("Profile Saved",
+                            f"✅ Spectral profile '{name}' saved to /profiles!\n"
+                            "You can now select it from the 'Saved Profiles' dropdown.")
+                    else:
+                        messagebox.showerror("Save Failed", "Could not write profile to disk.")
+                self.view.after(0, done)
+            except Exception as e:
+                self.view.after(0, lambda: messagebox.showerror("Capture Error", str(e)))
+
+        threading.Thread(target=capture_task, daemon=True).start()
+
+    def refresh_profiles(self):
+        """Reload the /profiles folder and update the profile combobox."""
+        names = spectral_profiles.list_profiles()
+        self.view.profile_combo['values'] = names if names else ["(No profiles saved yet)"]
+        if names:
+            self.view.profile_combo.set(names[0])
+        else:
+            self.view.profile_combo.set("(No profiles saved yet)")
+
+    def apply_profile(self):
+        """Load the selected spectral profile and compute a matching FIR from it."""
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load your song first!")
+            return
+
+        selected = self.view.profile_combo.get()
+        if not selected or selected.startswith("("):
+            messagebox.showwarning("No Profile", "Please select a valid profile from the dropdown.")
+            return
+
+        self.view.status_label.config(text=f"Applying profile: {selected}...")
+        self.view.load_profile_btn.config(state="disabled")
+
+        def task():
+            try:
+                profile = spectral_profiles.load_profile(selected)
+                if profile is None:
+                    raise FileNotFoundError(f"Profile '{selected}' not found in /profiles.")
+
+                fir = self.processor.calculate_matching_fir_from_profile(profile, self.dry_audio)
+
+                def update_ui():
+                    self.match_fir_coeff = fir
+                    self.view.match_status_label.config(
+                        text=f"Profile: {selected}", foreground="#A78BFA")  # Purple = profile mode
+                    self.view.match_amount_slider.state(['!disabled'])
+                    if self.view.match_amount_slider.get() == 0:
+                        self.view.match_amount_slider.set(50.0)
+                    self.view.load_profile_btn.config(state="normal")
+                    self.view.status_label.config(text="Profile Match Applied")
+                    self.trigger_render()
+
+                self.view.after(0, update_ui)
+            except Exception as e:
+                self.view.after(0, lambda: messagebox.showerror("Profile Error", str(e)))
+                self.view.after(0, lambda: self.view.load_profile_btn.config(state="normal"))
+
+        threading.Thread(target=task, daemon=True).start()
 
     def clear_reference_track(self):
         self.match_fir_coeff = None

@@ -263,6 +263,83 @@ class AudioProcessor:
         freqs, psd = signal.welch(data, fs=self.sample_rate, nperseg=nfft)
         return freqs, psd
 
+    def extract_ltas(self, audio_data: np.ndarray, nfft: int = 4096) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Extracts a normalized Long-Term Average Spectrum (LTAS) from audio.
+
+        The result is expressed in dB and mean-subtracted so that the original
+        loudness of the reference track doesn't bias the EQ curve.  This is the
+        data saved as a reusable Spectral Profile.
+
+        Returns
+        -------
+        freqs   : 1-D array of frequency bin centers (Hz)
+        ltas_db : 1-D normalized spectrum in dBFS (volume-independent)
+        """
+        freqs, psd = self.analyze_spectrum(audio_data, nfft=nfft)
+        # Convert PSD to dB, avoiding log(0)
+        ltas_db = 10.0 * np.log10(psd + 1e-12)
+        # Normalize by subtracting the mean — removes loudness bias
+        ltas_db -= np.mean(ltas_db)
+        return freqs, ltas_db
+
+    def calculate_matching_fir_from_profile(
+        self,
+        profile: dict,
+        target_audio: np.ndarray,
+        num_taps: int = 511,
+    ) -> np.ndarray:
+        """
+        Calculates a zero-phase FIR matching filter using a saved spectral profile
+        as the *reference* curve and the current target audio as the *target* curve.
+
+        This allows EQ matching without needing the original reference WAV loaded.
+
+        Parameters
+        ----------
+        profile      : Dict loaded by spectral_profiles.load_profile(), containing
+                       'freqs' (Hz) and 'ltas_db' (normalized dB) arrays.
+        target_audio : The audio being mastered (used to extract target spectrum).
+        num_taps     : Number of FIR filter taps (higher = more resolution).
+        """
+        nfft = 4096
+
+        # --- 1. Reference curve from saved profile (already normalized dB) ---
+        ref_freqs   = profile["freqs"]
+        ref_ltas_db = profile["ltas_db"]
+
+        # If the profile was captured at a different sample rate, we may have
+        # a different frequency axis — interpolate onto our own grid.
+        our_freqs, tgt_psd = self.analyze_spectrum(target_audio, nfft=nfft)
+        tgt_ltas_db = 10.0 * np.log10(tgt_psd + 1e-12)
+        tgt_ltas_db -= np.mean(tgt_ltas_db)  # normalize target too
+
+        # Interpolate reference onto the same frequency axis as target
+        ref_ltas_interp = np.interp(our_freqs, ref_freqs, ref_ltas_db,
+                                    left=ref_ltas_db[0], right=ref_ltas_db[-1])
+
+        # --- 2. Compute difference curve in linear amplitude ---
+        diff_db = ref_ltas_interp - tgt_ltas_db
+        mag_diff = 10.0 ** (diff_db / 20.0)
+
+        # --- 3. Smooth to prevent sharp resonances ---
+        window_size = 15
+        mag_diff = signal.medfilt(mag_diff, kernel_size=window_size)
+
+        # --- 4. Build FIR via firwin2 ---
+        norm_freqs = our_freqs / (self.sample_rate / 2.0)
+        if norm_freqs[-1] < 1.0:
+            norm_freqs = np.append(norm_freqs, 1.0)
+            mag_diff   = np.append(mag_diff, mag_diff[-1])
+
+        # Clamp gain (+/- 12dB)
+        max_gain = 10 ** (12.0 / 20.0)
+        mag_diff = np.clip(mag_diff, 0.1, max_gain)
+
+        fir_coeff = signal.firwin2(num_taps, norm_freqs, mag_diff)
+        return fir_coeff
+
+
     def calculate_matching_fir(self, reference_audio: np.ndarray, target_audio: np.ndarray, num_taps: int = 511) -> np.ndarray:
         """
         Calculates a zero-phase FIR matching filter between two audio samples.

@@ -120,7 +120,28 @@ class MainView(tk.Tk):
         
         self.clear_ref_btn = ttk.Button(match_frame, text="Clear", width=8)
         self.clear_ref_btn.pack(side=tk.RIGHT)
-        
+
+        # --- Capture Profile Row ---
+        capture_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        capture_frame.pack(fill=tk.X, padx=20, pady=(2, 5))
+
+        self.capture_profile_btn = ttk.Button(capture_frame, text="💾 Capture Profile", width=18)
+        self.capture_profile_btn.pack(side=tk.LEFT)
+        ToolTip(self.capture_profile_btn, "Save the current reference track's spectral fingerprint\nas a reusable Profile — no need to reload the WAV next time.")
+
+        # --- Spectral Profile Library Row ---
+        profile_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        profile_frame.pack(fill=tk.X, padx=20, pady=(0, 5))
+
+        ttk.Label(profile_frame, text="Saved Profiles:", style="Panel.TLabel", width=13).pack(side=tk.LEFT)
+        self.profile_combo = ttk.Combobox(profile_frame, state="readonly", font=("Segoe UI", 9))
+        self.profile_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 6))
+        ToolTip(self.profile_combo, "Select a saved spectral fingerprint to use as a reference\nwithout needing the original audio file.")
+
+        self.load_profile_btn = ttk.Button(profile_frame, text="Apply", width=8)
+        self.load_profile_btn.pack(side=tk.RIGHT)
+        ToolTip(self.load_profile_btn, "Apply the selected Spectral Profile as the reference EQ curve.")
+
         match_amount_frame = ttk.Frame(control_panel, style="Panel.TFrame")
         match_amount_frame.pack(fill=tk.X, padx=20, pady=5)
         
