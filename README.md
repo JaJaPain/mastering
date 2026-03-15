@@ -4,6 +4,22 @@ A professional-grade, locally-hosted audio mastering environment designed to del
 
 ---
 
+## 📸 Screenshots
+
+> See the app in action — [View the full screenshots folder here](./screenshots/)
+
+| Main Console | Preset Battle Selection | Synced Comparison |
+|---|---|---|
+| [![Main Console](./screenshots/03_main_mastering_console.png)](./screenshots/03_main_mastering_console.png) | [![Battle Selection](./screenshots/01_preset_battle_selection.png)](./screenshots/01_preset_battle_selection.png) | [![Comparison Console](./screenshots/02_synced_comparison_console.png)](./screenshots/02_synced_comparison_console.png) |
+
+**What's shown:**
+- **Main Mastering Console** — Full DSP chain: Input Gain, Air Shelf, Stereo Width, Multi-Band Harmonic Exciter, Mono Maker, and Target LUFS with Auto-Match. Real-time L/R and LUFS metering on the right.
+- **Preset Battle Selection** — Pick up to 4 presets (from 20 genre-specific options) and hit *Start Battle!* to spin up fully mastered versions in the background.
+- **Synced Comparison Console** — A/B/C/D compare up to 4 masters side-by-side with synced waveforms, real-time level meters, and a loop marker for focused listening.
+
+---
+
+
 ## 🚀 Key Pro Features (The v2 Update)
 
 ### 1. **Intelligent Multi-Band Clipping**
