@@ -13,10 +13,15 @@ Instead of a "one-size-fits-all" saturation, the **Intelligent Mode** uses three
 - **Soft-Clip Warmth (Mid):** Smooth tanh saturation for vocal clarity and "analog" presence.
 
 ### 2. **Preset Battle ⚔️**
-Stop guessing which setting is best. Select up to 4 different mastering presets and run a **Batch Battle**. The system will:
-- Master your track with all selected presets in the background.
-- Open a **Comparison Console** with high-resolution visualizers.
-- Provide **Synced Solo Playback**, allowing you to A/B/C/D compare versions at any point in the track with zero latency.
+Stop guessing which "vibe" is best. Select up to 4 different mastering presets and run a **Batch Battle**. In just a few clicks, you get 4 different fully mastered versions that you can A/B test against each other in real-time.
+
+**Battle Features:**
+- **Instant Synced Soloing:** Flip between presets with zero latency. Hear the difference between "Radio Pop" and "Vinyl Warmth" instantly.
+- **Real-Time Meter Bridge:** High-resolution L/R Peak and Integrated LUFS meters that swap instantly as you switch tracks.
+- **Turbo-Bake Waveforms:** Powered by NumPy vectorization, generating high-res audio silhouettes in milliseconds.
+- **Visual Loop Markers:** Precisely target the chorus or drop with visual highlighting and synced looping.
+- **Efficiency Mode:** High-performance "Shadow Metering" runs off a downsampled buffer, keeping the UI silky smooth.
+- **Cheeky Status Engine:** Stay entertained during the "Pro-Baking" phase with 30+ unique, witty engineering status updates.
 
 ### 3. **Asymmetric M/S Glue**
 Built for 3D depth. This system splits the audio into Mid (center) and Side (edges):
