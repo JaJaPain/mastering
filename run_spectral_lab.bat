@@ -1,13 +1,15 @@
 @echo off
-TITLE Mastering Console v2 - STABLE (main)
+TITLE Mastering Console - SPECTRAL PROFILE LAB (feature branch)
 SETLOCAL EnableDelayedExpansion
 
 :: 1. PROJECT FOLDER
 SET "PROJECT_DIR=D:\MasteringApp"
+SET "BRANCH=feature/spectral-profile-library"
 
 echo ========================================
-echo    Mastering Console v2 - STABLE
-echo    Branch: main
+echo    Mastering Console - SPECTRAL LAB
+echo    Branch: %BRANCH%
+echo    ** EXPERIMENTAL - Development Build **
 echo ========================================
 echo TIME: %TIME%
 echo RUNNING FROM: %~dp0
@@ -23,13 +25,13 @@ if %ERRORLEVEL% neq 0 (
 )
 echo [STATUS] CD SUCCESSFUL. CURRENT DIR: %CD%
 
-:: 3. SWITCH TO STABLE BRANCH
-echo [STATUS] Switching to main branch...
-git checkout main >nul 2>&1
+:: 3. SWITCH TO FEATURE BRANCH
+echo [STATUS] Switching to %BRANCH%...
+git checkout %BRANCH% >nul 2>&1
 if %ERRORLEVEL% neq 0 (
-    echo [WARNING] Could not switch to main branch. Continuing anyway.
+    echo [WARNING] Could not switch to %BRANCH%. Continuing anyway.
 ) else (
-    echo [STATUS] Branch: main (STABLE)
+    echo [STATUS] Branch: %BRANCH% (SPECTRAL PROFILE LAB)
 )
 
 :: 4. CHECK PYTHON
@@ -42,7 +44,7 @@ echo [STATUS] PYTHON BINARY VERIFIED.
 
 :: 5. LAUNCH
 echo.
-echo [STATUS] EXECUTING MAIN.PY...
+echo [STATUS] EXECUTING MAIN.PY (Spectral Lab build)...
 echo ----------------------------------------
 "venv\Scripts\python.exe" main.py
 echo ----------------------------------------
