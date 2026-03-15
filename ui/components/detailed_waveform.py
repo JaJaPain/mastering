@@ -13,34 +13,40 @@ class DetailedWaveform(tk.Canvas):
         self.base_color = color
         self.waveform_data = None
         self.progress = 0.0
+        self.highlight_start = 0.0 # Range start
+        self.highlight_end = 1.0   # Range end
         
         self.bind("<Configure>", lambda e: self.draw())
 
     def update_data(self, audio_array):
-        """Generates 1000 detailed points from audio data."""
+        """Generates 800 detailed points using high-speed vectorization."""
         if audio_array is None: return
         
-        # Mix to mono
+        # Mix to mono efficiently
         if audio_array.ndim > 1:
             data = np.mean(audio_array, axis=1)
         else:
             data = audio_array.flatten()
             
-        n_points = 800 # Higher resolution for comparison console
-        chunk_size = len(data) // n_points
+        n_points = 800
+        total_samples = len(data)
+        chunk_size = total_samples // n_points
         
-        waveform = []
-        for i in range(n_points):
-            chunk = np.abs(data[i*chunk_size : (i+1)*chunk_size])
-            if len(chunk) > 0:
-                waveform.append(float(np.max(chunk)))
-            else:
-                waveform.append(0.0)
+        if chunk_size < 1:
+            self.waveform_data = [0.0] * n_points
+            self.draw()
+            return
+
+        # Vectorized peak detection: MUCH faster than a Python for-loop
+        # Trim data to fit exactly into chunks for reshaping
+        trimmed_data = np.abs(data[:n_points * chunk_size])
+        reshaped_data = trimmed_data.reshape(n_points, chunk_size)
+        waveform = np.max(reshaped_data, axis=1)
                 
         # Scale 0-1
         max_val = np.max(waveform) if len(waveform) > 0 else 1.0
         if max_val > 0:
-            self.waveform_data = [v / max_val for v in waveform]
+            self.waveform_data = (waveform / max_val).tolist()
         else:
             self.waveform_data = [0.0] * n_points
             
@@ -50,35 +56,43 @@ class DetailedWaveform(tk.Canvas):
         self.progress = progress
         self.draw()
 
+    def set_highlight_range(self, start, end):
+        self.highlight_start = start
+        self.highlight_end = end
+        self.draw()
+
     def draw(self):
         self.delete("all")
         if self.waveform_data is None: return
         
         w = self.winfo_width()
         h = self.winfo_height()
-        if w < 10: return
+        if w < 40: return
+        
+        # Match RangeSlider's internal margins so visuals align vertically
+        margin = 20
+        track_w = w - 2 * margin
         
         n_points = len(self.waveform_data)
-        bar_width = w / n_points
+        bar_width = track_w / n_points
         
         # Draw silhouette
         for i, val in enumerate(self.waveform_data):
-            x = i * bar_width
+            x = margin + (i * bar_width)
             bar_h = max(2, val * h * 0.8)
             y1 = (h - bar_h) / 2
             y2 = (h + bar_h) / 2
             
-            # Determine color based on progress
-            # If past progress, use a dimmed version or gray
+            # Determine color based on highlight range
             current_pos = i / n_points
-            if current_pos <= self.progress:
+            if self.highlight_start <= current_pos <= self.highlight_end:
                 color = self.base_color
             else:
-                color = "#444444" # Unplayed gray
+                color = "#333333" # Dimmed outside loop
                 
             # Draw as lines for a smoother 'vector' look
             self.create_line(x, y1, x, y2, fill=color, width=1)
 
-        # Highlight Playhead
-        px = self.progress * w
-        self.create_line(px, 0, px, h, fill="#FFFFFF", width=1)
+        # Draw a clear progress line (Playhead) aligned with the track
+        px = margin + (self.progress * track_w)
+        self.create_line(px, 0, px, h, fill="#FFFFFF", width=1.5, tags="playhead")

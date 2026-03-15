@@ -30,8 +30,10 @@ class RangeSlider(tk.Canvas):
 
     def on_click(self, event):
         w = self.winfo_width()
-        if w == 0: return
-        pos = event.x / w
+        if w < 40: return
+        margin = 20
+        pos = (event.x - margin) / (w - 2 * margin)
+        pos = max(0.0, min(1.0, pos))
         
         # Determine which handle is closer
         dist_start = abs(pos - self.start_val)
@@ -46,8 +48,10 @@ class RangeSlider(tk.Canvas):
 
     def on_drag(self, event):
         w = self.winfo_width()
-        if w == 0: return
-        pos = max(0.0, min(1.0, event.x / w))
+        if w < 40: return
+        margin = 20
+        pos = (event.x - margin) / (w - 2 * margin)
+        pos = max(0.0, min(1.0, pos))
         
         if self.active_handle == 'start':
             self.start_val = min(pos, self.end_val - 0.01) # Keep tiny gap
@@ -63,21 +67,26 @@ class RangeSlider(tk.Canvas):
 
     def draw(self):
         self.delete("all")
+        self.update_idletasks() # Ensure width is accurate
         w = self.winfo_width()
         h = self.winfo_height()
-        if w < 10: return
+        if w < 40: return
+        
+        # Increased margin to ensure handles are never clipped or 'hidden' at the edges
+        margin = 20
+        track_w = w - 2 * margin
         
         # Draw background track
-        self.create_rectangle(0, h//2 - 2, w, h//2 + 2, fill="#333333", outline="")
+        self.create_rectangle(margin, h//2 - 2, w - margin, h//2 + 2, fill="#333333", outline="")
         
         # Draw active range highlight (Orange)
-        x1 = self.start_val * w
-        x2 = self.end_val * w
+        x1 = margin + (self.start_val * track_w)
+        x2 = margin + (self.end_val * track_w)
         self.create_rectangle(x1, h//2 - 3, x2, h//2 + 3, fill="#FF8C00", outline="")
         
-        # Draw handles
-        handle_w = 8
+        # Draw Handles (Vibrant Circular Handles for high visibility)
+        r = 8
         # Start Handle
-        self.create_rectangle(x1 - handle_w/2, 2, x1 + handle_w/2, h - 2, fill="#FFFFFF", outline="#FF8C00")
+        self.create_oval(x1 - r, h//2 - r, x1 + r, h//2 + r, fill="#FFFFFF", outline="#FF8C00", width=2, tags="handle")
         # End Handle
-        self.create_rectangle(x2 - handle_w/2, 2, x2 + handle_w/2, h - 2, fill="#FFFFFF", outline="#FF8C00")
+        self.create_oval(x2 - r, h//2 - r, x2 + r, h//2 + r, fill="#FFFFFF", outline="#FF8C00", width=2, tags="handle")
