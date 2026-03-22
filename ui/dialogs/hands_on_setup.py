@@ -103,7 +103,7 @@ class HandsOnSetupDialog(tk.Toplevel):
             
             # We show the message box while still on the 'Setting your starting point' screen.
             # This is the 'hold' the user requested.
-            msg = f"Gain adjusted to {final_gain:.1f} dB\nto hit {final_lufs:.1f} LUFS."
+            msg = f"Gain adjusted to {final_gain:.1f} dB\nto hit {final_lufs:.1f} LUFS.\n\nWe are all done here!  THE REST IS UP TO YOU!!!"
             messagebox.showinfo("Loudness Match", msg, parent=self)
             
             # Finalize transition only AFTER the user clicks OK on the pop-up

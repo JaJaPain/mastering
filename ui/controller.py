@@ -619,7 +619,7 @@ class UIController:
                     self.view.status_label.config(text=f"Matched to {actual_lufs:.1f} LUFS")
                     self.view.match_btn.config(state="normal")
                     self.trigger_render()
-                    messagebox.showinfo("Loudness Match", f"Gain adjusted to {current_gain:.1f} dB\nto hit {actual_lufs:.1f} LUFS.")
+                    messagebox.showinfo("Loudness Match", f"Gain adjusted to {current_gain:.1f} dB\nto hit {actual_lufs:.1f} LUFS.\n\nWe are all done here!  THE REST IS UP TO YOU!!!")
 
                 self.view.after(0, update_ui)
 
@@ -689,6 +689,74 @@ class UIController:
             return
             
         self.start_preset_battle() # Pop up the battle dialog
+        
+    def compare_custom_files(self):
+        from ui.dialogs.preset_battle import CustomCompareDialog
+        
+        self.view.withdraw()
+        
+        def on_files_selected(files):
+            if not files:
+                self.view.deiconify()
+                return
+                
+            results = {}
+            sample_rate = None
+            base_len = None
+            
+            import numpy as np
+            from engine.io.audio_io import read_audio
+            from ui.dialogs.preset_battle import ComparisonConsole
+            
+            try:
+                for i, path in enumerate(files):
+                    sr, audio = read_audio(path)
+                    
+                    # Verify Sample Rates match
+                    if sample_rate is None:
+                        sample_rate = sr
+                    elif sr != sample_rate:
+                        # Auto-convert mismatching sample rates (like 48kHz from BandLab) to our baseline
+                        import librosa
+                        # Librosa expects shape (channels, samples), so we transpose our (samples, channels) array
+                        audio_t = audio.T 
+                        audio_resampled = librosa.resample(y=audio_t, orig_sr=sr, target_sr=sample_rate)
+                        # Transpose back to our standard format
+                        audio = audio_resampled.T
+                    
+                    # Check length to ensure we are comparing the exact same song
+                    if base_len is None:
+                        base_len = audio.shape[0]
+                    else:
+                        diff = abs(audio.shape[0] - base_len)
+                        if diff > sample_rate * 0.5: # 0.5 seconds tolerance
+                            messagebox.showerror("Length Mismatch", f"Files must be the same length to compare!\nToo much difference in file:\n{os.path.basename(path)}")
+                            self.view.deiconify()
+                            return
+                        
+                        # Pad or trim slightly to match base_len exactly
+                        if audio.shape[0] > base_len:
+                            audio = audio[:base_len]
+                        elif audio.shape[0] < base_len:
+                            if audio.ndim == 2: # Stereo
+                                pad = np.zeros((base_len - audio.shape[0], audio.shape[1]))
+                                audio = np.vstack((audio, pad))
+                            else: # Mono
+                                audio = np.pad(audio, (0, base_len - audio.shape[0]))
+                    
+                    name = os.path.basename(path)
+                    if name in results:
+                        name = f"{name} ({i})"
+                    results[name] = audio
+                        
+                ComparisonConsole(self.view, results, sample_rate, self, output_dir="")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load files:\n{e}")
+                self.view.deiconify()
+                
+        dialog = CustomCompareDialog(self.view, on_files_selected)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: (self.view.deiconify(), dialog.destroy()))
 
     def on_landing_hands_on(self):
         """Action for the 'Hands-on' button on the landing page."""

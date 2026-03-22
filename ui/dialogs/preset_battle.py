@@ -8,6 +8,68 @@ from ui.components.detailed_waveform import DetailedWaveform
 from ui.components.range_slider import RangeSlider
 from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from engine.io import preset_manager
+import json
+
+class CustomCompareDialog(tk.Toplevel):
+    def __init__(self, parent, start_callback):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Custom Track Match")
+        self.geometry("600x400")
+        self.configure(bg=Colors.BG_MAIN)
+        self.grab_set()
+        
+        self.start_callback = start_callback
+        self.file_vars = [tk.StringVar() for _ in range(4)]
+        
+        container = tk.Frame(self, bg=Colors.BG_MAIN)
+        container.pack(expand=True, fill=tk.BOTH, padx=30, pady=30)
+        
+        ttk.Label(container, text="Select Up to 4 Files to Compare", font=("Segoe UI", 16, "bold"), background=Colors.BG_MAIN, foreground="#FFF").pack(pady=(0, 20))
+        
+        for i in range(4):
+            row = tk.Frame(container, bg=Colors.BG_MAIN)
+            row.pack(fill=tk.X, pady=10)
+            
+            lbl = ttk.Label(row, text=f"Track {i+1}:", font=("Segoe UI", 10, "bold"), background=Colors.BG_MAIN, foreground="#FFF", width=10)
+            lbl.pack(side=tk.LEFT)
+            
+            entry = ttk.Entry(row, textvariable=self.file_vars[i], state="readonly")
+            entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+            
+            btn = ttk.Button(row, text="Browse", command=lambda idx=i: self.browse_file(idx))
+            btn.pack(side=tk.RIGHT)
+            
+        btn_frame = tk.Frame(container, bg=Colors.BG_MAIN)
+        btn_frame.pack(fill=tk.X, pady=30)
+        
+        self.go_btn = ttk.Button(btn_frame, text="Start Match", style="ActiveToggle.TButton", state="disabled", command=self.on_go)
+        self.go_btn.pack(side=tk.RIGHT)
+        
+        self.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        ttk.Button(btn_frame, text="Cancel", command=self.on_cancel).pack(side=tk.RIGHT, padx=10)
+        
+    def on_cancel(self):
+        self.parent.deiconify()
+        self.destroy()
+        
+    def browse_file(self, idx):
+        path = filedialog.askopenfilename(title=f"Select Track {idx+1}", filetypes=[("Audio Files", "*.wav *.flac *.mp3 *.ogg")])
+        if path:
+            self.file_vars[idx].set(path)
+            self.check_files()
+            
+    def check_files(self):
+        count = sum(1 for v in self.file_vars if v.get())
+        if count >= 2:
+            self.go_btn.config(state="normal")
+        else:
+            self.go_btn.config(state="disabled")
+            
+    def on_go(self):
+        paths = [v.get() for v in self.file_vars if v.get()]
+        self.destroy()
+        self.start_callback(paths)
 
 class PresetBattleDialog(tk.Toplevel):
     """Dialog to select up to 4 presets for comparison."""
@@ -118,7 +180,7 @@ class PresetBattleDialog(tk.Toplevel):
                                  activebackground=Colors.BG_PANEL,
                                  activeforeground=text_color,
                                  font=("Segoe UI", 10),
-                                 command=self.check_limit)
+                                 command=lambda n=name: self.check_limit(n))
             chk.pack(side=tk.LEFT, fill=tk.X, expand=True)
             
             if is_custom:
@@ -142,13 +204,14 @@ class PresetBattleDialog(tk.Toplevel):
                 self.presets_data = preset_manager.load_presets().get("presets", {})
                 self.setup_ui()
 
-    def check_limit(self):
+    def check_limit(self, changed_name):
         selected = [name for name, var in self.vars.items() if var.get()]
         if len(selected) > 4:
-            # Uncheck the last one
+            # Uncheck the one that just tipped us over
             messagebox.showwarning("Limit Reached", "You can only compare up to 4 presets at once.")
-            return
-        
+            self.vars[changed_name].set(False)
+            selected.remove(changed_name)
+            
         self.selected_presets = selected
         if len(selected) > 0:
             self.start_btn.config(state="normal")
@@ -174,14 +237,14 @@ class BatchProgressWindow(tk.Toplevel):
         self.label = ttk.Label(self, text="Initializing...")
         self.label.pack(pady=10)
         
-        self.cheeky_var = tk.StringVar()
-        self.cheeky_label = ttk.Label(self, textvariable=self.cheeky_var, font=("Segoe UI", 9, "italic"), foreground=Colors.TEXT_SECONDARY)
-        self.cheeky_label.pack(pady=(0, 5))
-        
         self.progress = ttk.Progressbar(self, length=250, mode='determinate')
         self.progress.pack(pady=5)
         
-        ttk.Button(self, text="Cancel", command=self.cancel).pack(pady=10)
+        ttk.Button(self, text="Cancel", command=self.cancel).pack(pady=5)
+        
+        self.cheeky_var = tk.StringVar()
+        self.cheeky_label = ttk.Label(self, textvariable=self.cheeky_var, font=("Segoe UI", 9, "italic"), foreground=Colors.TEXT_SECONDARY)
+        self.cheeky_label.pack(pady=(5, 10))
         self.protocol("WM_DELETE_WINDOW", self.cancel)
 
         import json
@@ -240,14 +303,33 @@ class ComparisonConsole(tk.Toplevel):
         
         self.configure(bg=Colors.BG_MAIN)
         
+        # Stop playback on red X exit
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        
         # Setup UI layout directly
         self.setup_ui()
-        
         # Load audio data asynchronously
         self.after(100, self.async_load_waveforms)
 
+    def on_close(self):
+        if hasattr(self, 'player') and self.player.is_playing:
+            self.player.stop()
+        self.destroy()
+        self.controller.view.deiconify()
+
     def declare_winner(self, winner_name):
+        """Called when a user picks a winner. Gives options to keep or delete losing masters."""
+        
+        # Stop playback aggressively so it isn't playing while looking at the popups
+        if hasattr(self, 'player') and self.player.is_playing:
+            self.player.stop()
+            if self.winfo_exists():
+                self.play_btn.config(text="▶ PLAY ALL")
+                
+        # If output_dir is empty, this is a custom comparison mode, no file operations needed.
         if not self.output_dir:
+            messagebox.showinfo("Winner Selected!", f"You selected '{winner_name}' as the winner!", parent=self)
+            self.on_close()
             return
             
         msg = f"You chose '{winner_name}' as the winner!\n\nDo you want to keep all the newly generated masters, or permanently delete the losing masters?\n\n(The Original track is completely safe regardless)"
@@ -297,7 +379,7 @@ class ComparisonConsole(tk.Toplevel):
                 subprocess.Popen(["xdg-open", self.output_dir])
                 
             self.destroy()
-            self.controller.view.quit() # Close the app
+            self.controller.view.deiconify() # Restore the app instead of closing it
         except Exception as e:
             messagebox.showerror("Error Saving Master Files", f"Could not cleanly finish file management:\n{e}", parent=self)
 
@@ -441,7 +523,7 @@ class ComparisonConsole(tk.Toplevel):
         if hasattr(self, 'player') and self.player.is_playing:
             self.player.stop()
         self.destroy()
-        self.controller.view.quit()
+        self.controller.view.deiconify() # Restore the main view
 
     def solo(self, name):
         self.active_version = name
@@ -476,7 +558,8 @@ class ComparisonConsole(tk.Toplevel):
         w = event.widget.winfo_width()
         progress = event.x / w
         
-        total_frames = len(self.audio_dict["Original"])
+        first_key = list(self.audio_dict.keys())[0]
+        total_frames = len(self.audio_dict[first_key])
         self.current_frame = int(progress * total_frames)
         
         if hasattr(self, 'player'):
@@ -485,7 +568,8 @@ class ComparisonConsole(tk.Toplevel):
         self.update_waveforms()
 
     def update_waveforms(self):
-        total_frames = len(self.audio_dict["Original"])
+        first_key = list(self.audio_dict.keys())[0]
+        total_frames = len(self.audio_dict[first_key])
         progress = self.current_frame / total_frames if total_frames > 0 else 0
         for w in self.waveforms.values():
             w.set_progress(progress)
@@ -510,10 +594,11 @@ class ComparisonConsole(tk.Toplevel):
             self.waveforms[name].update_data(f_data)
             self.update() # Keep UI alive
             
-        # Pre-initialize player and prime 'Original' buffer
+        # Pre-initialize player and prime first available buffer
         from engine.io.playback import AudioPlayer
         self.player = AudioPlayer()
-        self.solo("Original")
+        first_key = list(self.audio_dict.keys())[0]
+        self.solo(first_key)
         
         # Initial draw of loop highlights (Default 0-1)
         self.on_loop_change(0.0, 1.0)
@@ -574,7 +659,8 @@ class ComparisonConsole(tk.Toplevel):
             self.player = AudioPlayer()
             self.solo(self.active_version) # Init buffer
             
-        total_frames = len(self.audio_dict["Original"])
+        first_key = list(self.audio_dict.keys())[0]
+        total_frames = len(self.audio_dict[first_key])
         self.player.loop_start = int(start * total_frames)
         self.player.loop_end = int(end * total_frames)
         
