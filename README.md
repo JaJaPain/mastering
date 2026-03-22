@@ -8,14 +8,15 @@ A professional-grade, locally-hosted audio mastering environment designed to del
 
 > See the app in action — [View the full screenshots folder here](./screenshots/)
 
-| Main Console | Preset Battle Selection | Synced Comparison |
-|---|---|---|
-| [![Main Console](./screenshots/03_main_mastering_console.png)](./screenshots/03_main_mastering_console.png) | [![Battle Selection](./screenshots/01_preset_battle_selection.png)](./screenshots/01_preset_battle_selection.png) | [![Comparison Console](./screenshots/02_synced_comparison_console.png)](./screenshots/02_synced_comparison_console.png) |
+| Main Console | Preset Battle Selection | Synced Comparison | NEW: Track Match |
+|---|---|---|---|
+| [![Main Console](./screenshots/03_main_mastering_console.png)](./screenshots/03_main_mastering_console.png) | [![Battle Selection](./screenshots/01_preset_battle_selection.png)](./screenshots/01_preset_battle_selection.png) | [![Comparison Console](./screenshots/02_synced_comparison_console.png)](./screenshots/02_synced_comparison_console.png) | [![Landing Page](./screenshots/front.png)](./screenshots/front.png) |
 
 **What's shown:**
-- **Main Mastering Console** — Full DSP chain: Input Gain, Air Shelf, Stereo Width, Multi-Band Harmonic Exciter, Mono Maker, and Target LUFS with Auto-Match. Real-time L/R and LUFS metering on the right.
-- **Preset Battle Selection** — Pick up to 4 presets (from 20 genre-specific options) and hit *Start Battle!* to spin up fully mastered versions in the background.
-- **Synced Comparison Console** — A/B/C/D compare up to 4 masters side-by-side with synced waveforms, real-time level meters, and a loop marker for focused listening.
+- **Main Mastering Console** — Full DSP chain with real-time L/R and LUFS metering.
+- **Preset Battle Selection** — Batch-master up to 4 genre presets simultaneously for instant A/B testing.
+- **Synced Comparison Console** — Compare up to 4 masters side-by-side with synced waveforms and loop markers.
+- **NEW: Landing Dashboard** — A split-view portal to jump between Preset Battles, Manual Mastering, or the new Track Match mode.
 
 ---
 
@@ -39,7 +40,15 @@ Stop guessing which "vibe" is best. Select up to 4 different mastering presets a
 - **Efficiency Mode:** High-performance "Shadow Metering" runs off a downsampled buffer, keeping the UI silky smooth.
 - **Cheeky Status Engine:** Stay entertained during the "Pro-Baking" phase with 30+ unique, witty engineering status updates.
 
-### 3. **Asymmetric M/S Glue**
+### 3. **Track Match Mode 🎧**
+Sourced from different DAWs or outboard gear? Load up to 4 of your own custom master files (even at different sample rates) to compare them side-by-side in the Synced Comparison Console.
+
+**Track Match Features:**
+- **Universal Resampling:** High-fidelity `librosa` auto-resampling allows you to compare a 48kHz BandLab export against a 44.1kHz DAW export with zero friction.
+- **Winner Designation:** Pick your favorite mix and the app handles the renaming and folder management for you.
+- **Length Normalization:** Automatically pads shorter tracks with silence to ensure perfect sync during comparison.
+
+### 4. **Asymmetric M/S Glue**
 Built for 3D depth. This system splits the audio into Mid (center) and Side (edges):
 - **Mid Channel:** High-ratio VCA compression to lock the kick and snare into a solid "spine."
 - **Side Channel:** Low-ratio, slow-release compression to let the guitars and spatial effects breathe and expand.
