@@ -12,6 +12,7 @@ from engine.io.audio_io import read_audio, write_audio
 from engine.io.playback import AudioPlayer
 from engine.io import preset_manager
 from ui.dialogs.preset_battle import PresetBattleDialog, BatchProgressWindow, ComparisonConsole
+from ui.dialogs.hands_on_setup import HandsOnSetupDialog
 from ui.components.tooltip import ToolTip
 
 class UIController:
@@ -79,6 +80,11 @@ class UIController:
         self.view.preset_combo['values'] = names
         
     def on_preset_selected(self, event):
+        # Pause if currently playing to prevent glitches during multi-parameter updates
+        was_playing = self.player.is_playing
+        if was_playing:
+            self.stop_audio()
+
         selected = self.view.preset_combo.get()
         preset_data = preset_manager.get_preset(selected)
         if preset_data:
@@ -112,6 +118,15 @@ class UIController:
             ToolTip(self.view.match_btn, "Analyzes the whole song and automatically adjusts\nGain to hit your target LUFS exactly.")
             
             self.trigger_render()
+
+            if was_playing:
+                # Give the app a 1-second window to render before resuming playback
+                self.view.after(1000, self.play_audio)
+            
+    def apply_preset_by_name(self, name):
+        """Used by external dialogs to apply a preset to the UI."""
+        self.view.preset_combo.set(name)
+        self.on_preset_selected(None)
             
     def on_save_preset(self):
         # Extremely simple inline prompt using pure tkinter
@@ -231,6 +246,10 @@ class UIController:
                 self.processor.sample_rate = self.sample_rate
                 self.loaded_file_path = file_path
                 self.view.file_label.config(text=os.path.basename(file_path))
+                
+                # Also update landing page label if it exists
+                if hasattr(self.view, 'landing_frame') and hasattr(self.view.landing_frame, 'file_label'):
+                    self.view.landing_frame.file_label.config(text=os.path.basename(file_path))
                 
                 # Generate visual waveform
                 self._generate_waveform(data)
@@ -610,6 +629,83 @@ class UIController:
                 self.view.after(0, lambda msg=str(e): messagebox.showerror("Error", f"Matching failed:\n{msg}"))
 
         threading.Thread(target=analysis_thread, daemon=True).start()
+
+    def perform_auto_match_sync(self, progress_callback=None):
+        """
+        Synchronous version of auto-match for use inside a worker thread.
+        returns final_gain
+        """
+        target = float(self.view.lufs_slider.get())
+        
+        # 1. Take current settings
+        params = {
+            'air_gain_db': float(self.view.air_slider.get()),
+            'stereo_width_db': float(self.view.width_slider.get()),
+            'drive_low_db': float(self.view.drive_low_slider.get()),
+            'drive_mid_db': float(self.view.drive_mid_slider.get()),
+            'drive_high_db': float(self.view.drive_high_slider.get()),
+            'exciter_bypass': self.view.exciter_bypass_var.get(),
+            'saturation_mode': self.view.sat_mode_combo.get(),
+            'mono_freq': float(self.view.mono_freq_slider.get()),
+            'mono_bypass': self.view.mono_bypass_var.get(),
+            'match_eq_fir': self.match_fir_coeff,
+            'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
+            'glue_db': float(self.view.glue_slider.get())
+        }
+        
+        current_gain = float(self.view.gain_slider.get())
+        actual_lufs = -60.0 # fallback
+        
+        for i in range(3):
+            if progress_callback:
+                progress_callback(i * 30, f"Analyzing Pass {i+1}/3...")
+                
+            params['input_gain_db'] = current_gain
+            test_output = self.processor.process(self.dry_audio, **params)
+            actual_lufs = self.processor.loudness_analyzer.analyze(test_output, self.sample_rate)
+            
+            diff = target - actual_lufs
+            if abs(diff) < 0.2:
+                break
+                
+            current_gain += diff
+            current_gain = max(-24.0, min(12.0, current_gain))
+
+        if progress_callback:
+            progress_callback(100, f"Matched to {actual_lufs:.1f} LUFS")
+            
+        def update_ui():
+            self.view.gain_slider.set(current_gain)
+            self.view.status_label.config(text=f"Matched to {actual_lufs:.1f} LUFS")
+            self.trigger_render()
+            
+        self.view.after(0, update_ui)
+        return current_gain, actual_lufs
+
+    def on_landing_battle(self):
+        """Action for the 'Preset Battle' button on the landing page."""
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load an audio file first!")
+            return
+            
+        self.start_preset_battle() # Pop up the battle dialog
+
+    def on_landing_hands_on(self):
+        """Action for the 'Hands-on' button on the landing page."""
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load an audio file first!")
+            return
+            
+        names = preset_manager.get_preset_names()
+        HandsOnSetupDialog(self.view, self, names, self._on_setup_finished)
+
+    def _on_setup_finished(self, preset_name):
+        """Callback from Hands-on Setup dialog."""
+        # The HandsOnSetupDialog already applied the preset and synchronously 
+        # auto-matched the gain. We just need to hide the landing and reveal the console.
+        
+        # Hide landing
+        self.view.show_hands_on()
 
     def start_preset_battle(self):
         if self.dry_audio is None:

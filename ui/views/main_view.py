@@ -7,6 +7,7 @@ from ui.components.meter import LevelMeter, LufsMeter, DbScale
 from ui.components.tooltip import ToolTip
 from ui.components.waveform import WaveformSeeker
 from ui.components.range_slider import RangeSlider
+from ui.views.landing_view import LandingView
 
 class MainView(tk.Tk):
     """
@@ -29,6 +30,10 @@ class MainView(tk.Tk):
         self.create_header()
         self.create_main_content()
         self.create_footer()
+        
+        # Overlay Landing Page
+        self.landing_frame = LandingView(self, self.controller)
+        self.landing_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
         
         # Start UI queue polling
         self.update_visualizer()
@@ -385,3 +390,13 @@ class MainView(tk.Tk):
             
         self.after(30, self.update_visualizer)
         
+    def show_hands_on(self):
+        """Hides the landing frame to reveal the mastering console."""
+        if hasattr(self, 'landing_frame'):
+            self.landing_frame.place_forget()
+            
+    def show_landing_page(self):
+        """Re-displays the landing frame."""
+        if hasattr(self, 'landing_frame'):
+            self.landing_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self.landing_frame.lift()
