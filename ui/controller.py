@@ -713,22 +713,34 @@ class UIController:
             return
             
         names = preset_manager.get_preset_names()
-        PresetBattleDialog(self.view, names, self.on_battle_start)
+        
+        # Hide main app while picking/running battle
+        self.view.withdraw()
+        
+        dialog = PresetBattleDialog(self.view, names, self.on_battle_start)
+        # Restore if user just 'X' out of the dialog
+        dialog.protocol("WM_DELETE_WINDOW", lambda: (self.view.deiconify(), dialog.destroy()))
 
     def on_battle_start(self, selected_presets, output_dir, use_spatial):
         msg = f"This will master your track using {len(selected_presets)} different presets.\n\n"
         msg += "It may take several minutes depending on your CPU.\n"
-        msg += "Do you want to proceed?"
-        if not messagebox.askyesno("Confirm Batch", msg):
+        msg += f"Files will be saved in: {output_dir}\n\nProceed?"
+        
+        if not messagebox.askyesno("Confirm Batch Mastering", msg):
+            self.view.deiconify() # Restore UI on cancel
             return
             
-        self.batch_win = BatchProgressWindow(self.view, self.cancel_batch)
+        self.batch_running = True
+        
+        def cancel_batch():
+            self.batch_running = False
+            self.view.deiconify() # Restore UI on cancel
+            
+        self.batch_win = BatchProgressWindow(self.view, cancel_batch)
         self.batch_running = True
         
         threading.Thread(target=self._run_batch_mastering, args=(selected_presets, output_dir, use_spatial), daemon=True).start()
 
-    def cancel_batch(self):
-        self.batch_running = False
 
     def _run_batch_mastering(self, presets, output_dir, use_spatial):
         results = {"Original": self.dry_audio}
@@ -776,10 +788,11 @@ class UIController:
                 
             if self.batch_running:
                 self.view.after(0, lambda: self.batch_win.destroy())
-                self.view.after(0, lambda: ComparisonConsole(self.view, results, self.sample_rate, self))
+                self.view.after(0, lambda: ComparisonConsole(self.view, results, self.sample_rate, self, output_dir))
                 
         except Exception as e:
             self.view.after(0, lambda: messagebox.showerror("Batch Error", f"Process failed:\n{e}"))
+            self.view.after(0, lambda: self.view.deiconify())
             if hasattr(self, 'batch_win'):
                 self.view.after(0, lambda: self.batch_win.destroy())
 

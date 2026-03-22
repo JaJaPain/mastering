@@ -20,7 +20,6 @@ class PresetBattleDialog(tk.Toplevel):
         self.presets_data = preset_manager.load_presets().get("presets", {})
         
         self.configure(bg=Colors.BG_MAIN)
-        self.transient(parent)
         self.grab_set()
 
         # --- Smart Sizing ---
@@ -167,21 +166,40 @@ class BatchProgressWindow(tk.Toplevel):
     def __init__(self, parent, on_cancel):
         super().__init__(parent)
         self.title("Mastering in Progress...")
-        self.geometry("350x150")
+        self.geometry("350x180")
         self.on_cancel = on_cancel
         self.configure(bg=Colors.BG_PANEL)
-        
-        self.transient(parent)
         self.grab_set()
         
         self.label = ttk.Label(self, text="Initializing...")
         self.label.pack(pady=10)
         
+        self.cheeky_var = tk.StringVar()
+        self.cheeky_label = ttk.Label(self, textvariable=self.cheeky_var, font=("Segoe UI", 9, "italic"), foreground=Colors.TEXT_SECONDARY)
+        self.cheeky_label.pack(pady=(0, 5))
+        
         self.progress = ttk.Progressbar(self, length=250, mode='determinate')
-        self.progress.pack(pady=10)
+        self.progress.pack(pady=5)
         
         ttk.Button(self, text="Cancel", command=self.cancel).pack(pady=10)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+        import json
+        import os
+        msg_file = os.path.join(os.path.dirname(__file__), '..', '..', 'loading_messages.json')
+        try:
+            with open(msg_file, 'r') as f:
+                self.cheeky_messages = json.load(f)
+        except Exception:
+            self.cheeky_messages = ["Mastering in progress..."]
+            
+        self.update_cheeky()
+        
+    def update_cheeky(self):
+        import random
+        if self.winfo_exists():
+            self.cheeky_var.set(random.choice(self.cheeky_messages))
+            self.after(5000, self.update_cheeky)
 
     def update_progress(self, text, value):
         self.label.config(text=text)
@@ -195,11 +213,12 @@ class BatchProgressWindow(tk.Toplevel):
 
 class ComparisonConsole(tk.Toplevel):
     """Full screen window to compare multiple mastered versions synced."""
-    def __init__(self, parent, audio_data_dict, sample_rate, controller):
+    def __init__(self, parent, audio_data_dict, sample_rate, controller, output_dir=""):
         """
         audio_data_dict: { 'Original': data, 'PresetName': data, ... }
         """
         super().__init__(parent)
+        self.output_dir = output_dir
         self.title("Comparison Console - Sync Playback")
         # Widen to 1400px and center on screen
         width, height = 1400, 850
@@ -217,53 +236,70 @@ class ComparisonConsole(tk.Toplevel):
         self.metering_dict = {} # Low-res buffers for CPU-friendly metering
         self.meter_sample_rate = 4000 # 4kHz is plenty for a visual meter
         
+        self.win_btns = {}
+        
         self.configure(bg=Colors.BG_MAIN)
         
-        # Initial Loading State
-        self.loading_frame = tk.Frame(self, bg=Colors.BG_MAIN)
-        self.loading_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-        
-        # Center container for loading elements
-        load_center = tk.Frame(self.loading_frame, bg=Colors.BG_MAIN)
-        load_center.place(relx=0.5, rely=0.5, anchor="center")
-        
-        tk.Label(load_center, text="Analyzing Audio & Building Waveforms...", 
-                 fg="#FFFFFF", bg=Colors.BG_MAIN, font=("Segoe UI", 16, "italic")).pack(pady=10)
-        
-        # The Hourglass & Cheeky Status
-        self.hour_glass_var = tk.StringVar(value="⏳")
-        self.hour_glass_label = tk.Label(load_center, textvariable=self.hour_glass_var, 
-                                         fg="#FFD700", bg=Colors.BG_MAIN, font=("Segoe UI", 30))
-        self.hour_glass_label.pack()
-        self.hour_glass_angle = 0
-        
-        self.cheeky_status_var = tk.StringVar(value="Waking up the transistors...")
-        self.cheeky_label = tk.Label(load_center, textvariable=self.cheeky_status_var, 
-                                     fg="#888888", bg=Colors.BG_MAIN, font=("Segoe UI", 10, "italic"))
-        self.cheeky_label.pack(pady=10)
-        
-        self.cheeky_messages = [
-            "Polishing the transients...", "De-essing the ghosts in the machine...", "Adding exactly 3 grams of 'Soul'...",
-            "Teaching the limiter some manners...", "Removing the sound of silence...", "Converting math into magic...",
-            "Tuning the ozone layers...", "Organizing the bits and bobs...", "Convincing the bass to stay in mono...",
-            "Buffers are buffering their best...", "Ironing out the audio wrinkles...", "Sprinkling some analog dust...",
-            "Making it loud, but like, professionally loud...", "Hunting for stray harmonics...", "Calculating the 3rd dimension...",
-            "Aligning the stars and the waveforms...", "Feeding the algorithm some coffee...", "Mastering the art of waiting...",
-            "Re-ordering the chaos...", "Polishing the air frequencies...", "Ensuring the kick punch is non-lethal...",
-            "Sweeping the digital floor...", "Warming up the virtual tubes...", "Calibrating the vibe-o-meter...",
-            "Distilling the essence of the mix...", "Removing accidental sneeze from track 4...", "Glueing things with digital honey...",
-            "Stretching the stereo field...", "Sharpening the snares...", "Finalizing the sonic sculpture...",
-            "Checking if you are still awake...", "Optimizing the 'shimmer' index...", "Negotiating with the drum peaks..."
-        ]
-        
-        # Start Heartbeat
-        self.update_loading_heartbeat()
-        
-        # Setup UI layout (will be hidden by loading_frame initially)
+        # Setup UI layout directly
         self.setup_ui()
         
-        # Load audio data asynchronously to show the loading marker
+        # Load audio data asynchronously
         self.after(100, self.async_load_waveforms)
+
+    def declare_winner(self, winner_name):
+        if not self.output_dir:
+            return
+            
+        msg = f"You chose '{winner_name}' as the winner!\n\nDo you want to keep all the newly generated masters, or permanently delete the losing masters?\n\n(The Original track is completely safe regardless)"
+        
+        from tkinter.messagebox import askyesnocancel
+        # Yes = Keep All, No = Delete Losers, Cancel = Back
+        answer = askyesnocancel("Select Battle Winner", msg + "\n\nYES = Keep All & Rename Winner\nNO = Delete Losers & Rename Winner\nCANCEL = Back to Comparison", parent=self)
+        
+        if answer is None:
+            return
+            
+        keep_all = answer
+        
+        if hasattr(self, 'player') and self.player.is_playing:
+            self.player.stop()
+            
+        try:
+            for name in self.audio_dict.keys():
+                if name == "Original":
+                    continue
+                    
+                safe_name = "".join([c if c.isalnum() or c in (' ', '_', '-') else '_' for c in name])
+                filename = f"Master_{safe_name.replace(' ', '_')}.wav"
+                file_path = os.path.join(self.output_dir, filename)
+                
+                if name == winner_name:
+                    # Rename winner clearly
+                    winner_filename = f"WINNER_{filename}"
+                    winner_path = os.path.join(self.output_dir, winner_filename)
+                    if os.path.exists(file_path):
+                        os.rename(file_path, winner_path)
+                else:
+                    if not keep_all:
+                        # User wants to trace out losers
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            
+            messagebox.showinfo("Battle Concluded!", f"Winner successfully designated!\nFiles managed at:\n{self.output_dir}", parent=self)
+            
+            # Open the folder where the winners are saved
+            import platform, subprocess
+            if platform.system() == "Windows":
+                os.startfile(self.output_dir)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", self.output_dir])
+            else:
+                subprocess.Popen(["xdg-open", self.output_dir])
+                
+            self.destroy()
+            self.controller.view.quit() # Close the app
+        except Exception as e:
+            messagebox.showerror("Error Saving Master Files", f"Could not cleanly finish file management:\n{e}", parent=self)
 
     def setup_ui(self):
         # Header
@@ -324,8 +360,19 @@ class ComparisonConsole(tk.Toplevel):
         ctrl_frame = ttk.Frame(meter_bridge, style="Panel.TFrame")
         ctrl_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=20)
         
+        style = ttk.Style()
+        if "FlashRed.TButton" not in style.theme_names():
+            style.configure("FlashRed.TButton", background="#FF3333", foreground="white", font=("Segoe UI", 10, "bold"))
+            
         self.play_btn = ttk.Button(ctrl_frame, text="▶ PLAY ALL", command=self.toggle_play, state="disabled")
         self.play_btn.pack(expand=True, padx=20, ipady=5)
+        self.flash_state = False
+        self.flash_loop_id = None
+        
+        # When user clicks the X button to close Comparison Console
+        self.protocol("WM_DELETE_WINDOW", self.on_close_console)
+
+
 
         # Pack Scrollbar next to the meters
         scrollbar.pack(side=tk.RIGHT, fill="y")
@@ -369,12 +416,32 @@ class ComparisonConsole(tk.Toplevel):
             
             if name == "Original":
                 btn.config(style="ActiveToggle.TButton")
+                win_frame = ttk.Frame(row, width=120)
+                win_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 10))
+                win_frame.pack_propagate(False)
+                
+                win_btn = ttk.Button(win_frame, text="Original", state="disabled")
+                win_btn.pack(expand=True, fill=tk.BOTH, pady=10)
+            else:
+                win_frame = ttk.Frame(row, width=120)
+                win_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 10))
+                win_frame.pack_propagate(False)
+                
+                win_btn = ttk.Button(win_frame, text="🏆 WINNER", command=lambda n=name: self.declare_winner(n), state="disabled")
+                win_btn.pack(expand=True, fill=tk.BOTH, pady=10)
+                self.win_btns[name] = win_btn
             
             wave = DetailedWaveform(row, height=120, color="#FF8C00" if name=="Original" else "#00D2FF")
             wave.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
             # Make it clickable to seek
             wave.bind("<Button-1>", self.on_seek) 
             self.waveforms[name] = wave
+
+    def on_close_console(self):
+        if hasattr(self, 'player') and self.player.is_playing:
+            self.player.stop()
+        self.destroy()
+        self.controller.view.quit()
 
     def solo(self, name):
         self.active_version = name
@@ -443,11 +510,6 @@ class ComparisonConsole(tk.Toplevel):
             self.waveforms[name].update_data(f_data)
             self.update() # Keep UI alive
             
-        # --- LOADING COMPLETE ---
-        # Remove loading screen
-        if hasattr(self, 'loading_frame'):
-            self.loading_frame.destroy()
-            
         # Pre-initialize player and prime 'Original' buffer
         from engine.io.playback import AudioPlayer
         self.player = AudioPlayer()
@@ -460,9 +522,33 @@ class ComparisonConsole(tk.Toplevel):
         self.play_btn.config(state="normal")
         for btn in self.solo_btns.values():
             btn.config(state="normal")
+        if hasattr(self, 'win_btns'):
+            for btn in self.win_btns.values():
+                btn.config(state="normal")
             
-        # Start the sync loop
+        # Start the sync and flash loops
         self.update_loop()
+        self.flash_play_button_loop()
+        
+    def flash_play_button_loop(self):
+        if not self.winfo_exists():
+            return
+            
+        is_playing = hasattr(self, 'player') and self.player.is_playing
+        
+        if is_playing or str(self.play_btn['state']) == 'disabled':
+            # Do not flash
+            self.play_btn.config(style="TButton")
+            self.flash_state = False
+        else:
+            # Flash!
+            self.flash_state = not self.flash_state
+            if self.flash_state:
+                self.play_btn.config(style="FlashRed.TButton")
+            else:
+                self.play_btn.config(style="TButton")
+                
+        self.flash_loop_id = self.after(500, self.flash_play_button_loop)
             
     def update_loading_heartbeat(self):
         """Rotates the icon and changes cheeky text every 5 seconds to prove we aren't hung."""
