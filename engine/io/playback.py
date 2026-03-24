@@ -73,8 +73,16 @@ class AudioPlayer:
         
     def _on_finished(self):
         self.is_playing = False
-        self.current_frame = 0
         
+    def pause(self):
+        """Stops playback but keeps the playhead position for resume."""
+        if self.stream is not None:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
+        self.is_playing = False
+        # NOTE: current_frame is NOT reset — this is the key difference from stop()
+
     def stop(self):
         if self.stream is not None:
             self.stream.stop()

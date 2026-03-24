@@ -35,6 +35,15 @@ class MainView(tk.Tk):
         self.landing_frame = LandingView(self, self.controller)
         self.landing_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
         
+        # === SPACEBAR PLAY/STOP SYSTEM ===
+        # Override the default TButton class binding that invokes buttons on <space>.
+        # In a DAW-style app, spacebar should ALWAYS control playback, never click buttons.
+        self.bind_class('TButton', '<KeyPress-space>', lambda e: None)
+        self.bind_class('TButton', '<KeyRelease-space>', lambda e: None)
+        
+        # Single global handler — routes to whichever window has focus
+        self.bind_all('<KeyPress-space>', self._on_spacebar)
+        
         # Start UI queue polling
         self.update_visualizer()
         
@@ -336,9 +345,6 @@ class MainView(tk.Tk):
         self.play_btn = ttk.Button(playback_frame, text="▶ Play")
         self.play_btn.pack(side=tk.LEFT, padx=5)
         
-        self.stop_btn = ttk.Button(playback_frame, text="⏹ Stop")
-        self.stop_btn.pack(side=tk.LEFT, padx=5)
-        
         # A/B Toggles
         self.btn_a = ttk.Button(playback_frame, text="A (Dry)", style="ActiveToggle.TButton")
         self.btn_a.pack(side=tk.LEFT, padx=(20, 0))
@@ -390,6 +396,28 @@ class MainView(tk.Tk):
             
         self.after(30, self.update_visualizer)
         
+    def _on_spacebar(self, event):
+        """Global spacebar handler — routes to whichever window has focus."""
+        # Only block for real text-entry widgets (not readonly comboboxes)
+        focused = self.focus_get()
+        if focused and isinstance(focused, (tk.Entry, ttk.Entry)) and not isinstance(focused, ttk.Combobox):
+            return  # Let the space character be typed normally
+        
+        # Don't toggle if the landing page is still visible
+        if hasattr(self, 'landing_frame') and self.landing_frame.winfo_ismapped():
+            return "break"
+        
+        # Route to the correct window's player
+        toplevel = event.widget.winfo_toplevel()
+        if toplevel == self:
+            # Main mastering console
+            self.controller.toggle_play()
+        elif hasattr(toplevel, 'toggle_play'):
+            # ComparisonConsole (Preset Battle or Custom Track Match)
+            toplevel.toggle_play()
+        
+        return "break"
+
     def show_hands_on(self):
         """Hides the landing frame to reveal the mastering console."""
         if hasattr(self, 'landing_frame'):

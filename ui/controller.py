@@ -42,9 +42,8 @@ class UIController:
         self.view.load_btn.config(command=self.load_audio_file)
         self.view.compare_btn.config(command=self.start_preset_battle)
         
-        # Playback events
-        self.view.play_btn.config(command=self.play_audio)
-        self.view.stop_btn.config(command=self.stop_audio)
+        # Playback events — single toggle button
+        self.view.play_btn.config(command=self.toggle_play)
         self.view.btn_a.config(command=lambda: self.set_listen_mode("A"))
         self.view.btn_b.config(command=lambda: self.set_listen_mode("B"))
         
@@ -110,6 +109,7 @@ class UIController:
             self.view.mono_freq_slider.set(preset_data.get("mono_freq", 150.0))
             self.view.mono_freq_val.config(text=f"{int(float(self.view.mono_freq_slider.get()))} Hz")
             self.view.mono_bypass_var.set(preset_data.get("mono_bypass", False))
+            self.view.glue_slider.set(preset_data.get("glue", 2.0))
             self.view.lufs_slider.set(preset_data.get("target_lufs", preset_data.get("Target LUFS", -14.0)))
             
             # Unlock Auto-Match once a preset (vibe) is chosen
@@ -145,6 +145,7 @@ class UIController:
                 "mono_freq": float(self.view.mono_freq_slider.get()),
                 "mono_bypass": self.view.mono_bypass_var.get(),
                 "input_gain": float(self.view.gain_slider.get()),
+                "glue": float(self.view.glue_slider.get()),
                 "description": "User Custom Preset"
             }
             if preset_manager.save_custom_preset(name, data):
@@ -267,6 +268,14 @@ class UIController:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file:\n{e}")
 
+    def toggle_play(self):
+        """Single toggle: if playing, pause in place; if paused, resume."""
+        if self.player.is_playing:
+            self.player.pause()
+            self.view.play_btn.config(text="▶ Play", style="TButton")
+        else:
+            self.play_audio()
+    
     def play_audio(self):
         if self.dry_audio is None:
             return
@@ -280,9 +289,11 @@ class UIController:
         self.player.set_buffer(ready_buffer, self.sample_rate)
         if not self.player.is_playing:
             self.player.play()
+            self.view.play_btn.config(text="⏹ Stop", style="ActiveToggle.TButton")
             
     def stop_audio(self):
         self.player.stop()
+        self.view.play_btn.config(text="▶ Play", style="TButton")
 
     def set_listen_mode(self, mode):
         self.listen_mode = mode
@@ -538,7 +549,8 @@ class UIController:
                     'mono_bypass': self.view.mono_bypass_var.get(),
                     'target_lufs': float(self.view.lufs_slider.get()),
                     'match_eq_fir': self.match_fir_coeff,
-                    'match_amount': float(self.view.match_amount_slider.get()) / 100.0
+                    'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
+                    'glue_db': float(self.view.glue_slider.get())
                 }
                 
                 # Double-check render (some apps like soundfile don't like 32-bit for MP3)

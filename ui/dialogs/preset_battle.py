@@ -548,7 +548,7 @@ class ComparisonConsole(tk.Toplevel):
             self.solo(self.active_version) # Init buffer
             
         if self.player.is_playing:
-            self.player.stop()
+            self.player.pause()
             self.play_btn.config(text="▶ PLAY ALL")
         else:
             self.player.play()
