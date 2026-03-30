@@ -125,9 +125,9 @@ class MainView(tk.Tk):
         match_frame = ttk.Frame(control_panel, style="Panel.TFrame")
         match_frame.pack(fill=tk.X, padx=20, pady=5)
         
-        self.load_ref_btn = ttk.Button(match_frame, text="Select Reference Track...")
+        self.load_ref_btn = ttk.Button(match_frame, text="Select Reference Track…")
         self.load_ref_btn.pack(side=tk.LEFT)
-        ToolTip(self.load_ref_btn, "Choose a professional song (WAV) to match your tonal balance to.")
+        ToolTip(self.load_ref_btn, "Choose a reference track to match your tonal balance to.\nSupports local WAV files  OR  any YouTube URL!")
         
         self.match_status_label = ttk.Label(match_frame, text="None Loaded", foreground=Colors.TEXT_SECONDARY, font=("Segoe UI", 8))
         self.match_status_label.pack(side=tk.LEFT, padx=10)
@@ -389,6 +389,8 @@ class MainView(tk.Tk):
                     self.waveform_seeker.set_progress(msg['data'])
                 elif msg['type'] == 'render_complete':
                     self.controller._on_render_complete(msg['data'])
+                elif msg['type'] == 'preview_complete':
+                    self.controller._on_preview_complete(msg['data'])
                 elif msg['type'] == 'render_error':
                     self.controller._on_render_error(msg['data'])
         except Exception as e:

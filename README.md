@@ -23,6 +23,12 @@ A professional-grade, locally-hosted audio mastering environment designed to del
 
 ## 🚀 Key Pro Features (The v2 Update)
 
+### 0. **Two-Tier Performance Rendering ⚡**
+We've optimized the manual mastering engine for **near-real-time feedback**.
+- **Tier 1 (Instant):** Move a slider and hear the change in milleseconds. The app renders a short "audition window" (~8s) around your playhead instantly, bypassing expensive true-peak limiting for immediate tonal evaluation.
+- **Tier 2 (Precise):** Once you stop sliding, a full-fidelity background render completes the entire track and replaces the audition buffer seamlessly.
+- **Vectorized DSP:** All core compression and envelope followers have been rewritten using NumPy/SciPy `lfilter` vectorization, running up to 200x faster than standard Python loops.
+
 ### 1. **Intelligent Multi-Band Clipping**
 Instead of a "one-size-fits-all" saturation, the **Intelligent Mode** uses three localized algorithms:
 - **Hard Clipping (Low):** Instantaneous low-end peak truncation for drum punch without pumping.
@@ -53,11 +59,12 @@ Built for 3D depth. This system splits the audio into Mid (center) and Side (edg
 - **Mid Channel:** High-ratio VCA compression to lock the kick and snare into a solid "spine."
 - **Side Channel:** Low-ratio, slow-release compression to let the guitars and spatial effects breathe and expand.
 
-### 4. **AI-Ready Matching EQ**
-Match your tonal balance to your favorite professional song. Import any WAV/MP3 reference track, and the engine will:
-- Mathematically analyze the target spectral signature.
-- Generate a custom Linear Phase FIR filter.
-- Apply the professional "curve" to your own track with a variable blend (0-100%).
+### 4. **AI-Ready Matching EQ (YouTube Support!) 🎼**
+Match your tonal balance to your favorite professional song. Import any reference track, and the engine will:
+- **NEW: YouTube URL Support** — Paste any YouTube link directly. The app auto-downloads the high-quality audio stream (via `yt-dlp`) and converts it to a reference-grade WAV instantly.
+- **Tonal Breakdown** — Mathematically analyzes the target spectral signature using Welch's method.
+- **Curve Generation** — Generates a custom Linear Phase FIR filter.
+- **Blend Control** — Apply the professional "curve" to your own track with a variable blend (0-100%).
 
 ### 5. **Interactive Full-Song Navigator**
 The bottom of the UI features a "Full Song Visualizer." Click anywhere on the waveform silhouette to instantly seek to that point in the track. Perfect for fast navigation between the verse and the chorus.
@@ -104,6 +111,7 @@ Simply run the diagnostic boot script:
 - **sounddevice:** Low-latency 32-bit float audio playback.
 - **Pillow:** Dynamic UI icons and asset rendering.
 - **librosa:** High-fidelity waveform analysis.
+- **yt-dlp:** Automated YouTube audio stream fetching.
 
 ---
 

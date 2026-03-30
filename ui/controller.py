@@ -27,8 +27,12 @@ class UIController:
         self.loaded_file_path = ""
         self.listen_mode = "A" # "A" = Dry, "B" = Wet
         self.render_timer = None
+        self.full_render_timer = None
         self.is_rendering = False
+        self.is_preview_rendering = False
         self.match_fir_coeff = None
+        # How many seconds of audio to process for the instant preview
+        self.PREVIEW_DURATION_SEC = 8
         
         # Player-ready caches (float32, contiguous) for zero-latency A/B switching
         self.player_ready_dry = None
@@ -159,38 +163,82 @@ class UIController:
         if self.dry_audio is None:
             messagebox.showwarning("Warning", "Please load your song first so we have something to match!")
             return
-            
-        file_path = filedialog.askopenfilename(
-            title="Select Reference WAV File",
-            filetypes=(("WAV Files", "*.wav"), ("All Files", "*.*"))
-        )
-        if file_path:
-            self.view.status_label.config(text="Analyzing Reference Spectrum...")
-            self.view.load_ref_btn.config(state="disabled")
-            
-            def analyze_task():
-                try:
-                    sr, ref_data = read_audio(file_path)
-                    # Resample if needed would be complex, assume 44.1 for now or handle in processor
-                    # Processor handles basic spectral matching
-                    fir = self.processor.calculate_matching_fir(ref_data, self.dry_audio)
-                    
-                    def update_ui():
-                        self.match_fir_coeff = fir
-                        self.view.match_status_label.config(text=os.path.basename(file_path), foreground="#00D2FF")
-                        self.view.match_amount_slider.state(['!disabled'])
-                        if self.view.match_amount_slider.get() == 0:
-                            self.view.match_amount_slider.set(50.0) # Start with 50% match
-                        self.view.load_ref_btn.config(state="normal")
-                        self.view.status_label.config(text="Match Balanced")
-                        self.trigger_render()
-                        
-                    self.view.after(0, update_ui)
-                except Exception as e:
-                    self.view.after(0, lambda: messagebox.showerror("Analysis Error", f"Failed to analyze reference:\n{e}"))
-                    self.view.after(0, lambda: self.view.load_ref_btn.config(state="normal"))
 
-            threading.Thread(target=analyze_task, daemon=True).start()
+        # Show the source-picker dialog
+        _ReferenceSourceDialog(self.view, self._on_reference_source_chosen)
+
+    def _on_reference_source_chosen(self, source_type, value):
+        """
+        Called by _ReferenceSourceDialog when the user confirms their choice.
+        source_type: 'file' | 'youtube'
+        value:       file path  |  YouTube URL
+        """
+        if source_type == 'file':
+            self._analyze_reference_file(value, display_name=os.path.basename(value))
+        elif source_type == 'youtube':
+            self._download_and_analyze_youtube(value)
+
+    def _analyze_reference_file(self, file_path: str, display_name: str):
+        """Analyze a local WAV/audio file as a reference track."""
+        self.view.status_label.config(text="Analyzing Reference Spectrum…")
+        self.view.load_ref_btn.config(state="disabled")
+
+        def analyze_task():
+            try:
+                sr, ref_data = read_audio(file_path)
+                fir = self.processor.calculate_matching_fir(ref_data, self.dry_audio)
+
+                def update_ui():
+                    self.match_fir_coeff = fir
+                    # Trim title to fit the label
+                    label_text = display_name[:32] + "…" if len(display_name) > 33 else display_name
+                    self.view.match_status_label.config(text=label_text, foreground="#00D2FF")
+                    self.view.match_amount_slider.state(['!disabled'])
+                    if self.view.match_amount_slider.get() == 0:
+                        self.view.match_amount_slider.set(50.0)
+                    self.view.load_ref_btn.config(state="normal")
+                    self.view.status_label.config(text="Reference Matched ✓")
+                    self.trigger_render()
+
+                self.view.after(0, update_ui)
+            except Exception as e:
+                self.view.after(0, lambda: messagebox.showerror("Analysis Error", f"Failed to analyze reference:\n{e}"))
+                self.view.after(0, lambda: self.view.load_ref_btn.config(state="normal"))
+
+        threading.Thread(target=analyze_task, daemon=True).start()
+
+    def _download_and_analyze_youtube(self, url: str):
+        """Download audio from a YouTube URL and use it as the reference track."""
+        from engine.io.youtube_ref import download_audio_for_reference
+
+        self.view.load_ref_btn.config(state="disabled")
+
+        # Show a progress popup
+        prog_win = _YouTubeProgressWindow(self.view)
+
+        def on_progress(pct, msg):
+            self.view.after(0, lambda p=pct, m=msg: prog_win.update(p, m))
+
+        def on_done(wav_path, title):
+            def finish():
+                prog_win.destroy()
+                self._analyze_reference_file(wav_path, display_name=title)
+            self.view.after(0, finish)
+
+        def on_error(msg):
+            def show_err():
+                prog_win.destroy()
+                self.view.load_ref_btn.config(state="normal")
+                messagebox.showerror("YouTube Download Error", msg)
+            self.view.after(0, show_err)
+
+        download_audio_for_reference(
+            url,
+            progress_callback=on_progress,
+            done_callback=on_done,
+            error_callback=on_error,
+        )
+
 
     def clear_reference_track(self):
         self.match_fir_coeff = None
@@ -380,9 +428,16 @@ class UIController:
         if self.listen_mode == "A":
             self.set_listen_mode("B")
             
+        # Cancel any pending timers
         if self.render_timer is not None:
             self.view.after_cancel(self.render_timer)
-        self.render_timer = self.view.after(300, self.trigger_render)
+        if self.full_render_timer is not None:
+            self.view.after_cancel(self.full_render_timer)
+
+        # Tier 1: Fire a fast preview render almost immediately (50ms debounce)
+        self.render_timer = self.view.after(50, self.trigger_preview_render)
+        # Tier 2: Fire the full background render after the user stops sliding (800ms debounce)
+        self.full_render_timer = self.view.after(800, self.trigger_render)
         
         # Update Real-Time Readouts
         m_freq = int(float(self.view.mono_freq_slider.get()))
@@ -390,18 +445,10 @@ class UIController:
         
         # Update LUFS Target Line on UI immediately
         self.view.meter_lufs.meter.set_target(float(self.view.lufs_slider.get()))
-        
-    def trigger_render(self):
-        if self.is_rendering or self.dry_audio is None:
-            # Check again later if we are currently mid-render
-            if self.is_rendering:
-                self.render_timer = self.view.after(200, self.trigger_render)
-            return
 
-        self.is_rendering = True
-        self.view.status_label.config(text="Rendering Preview...")
-        
-        params = {
+    def _get_current_params(self):
+        """Read all slider values into a params dict."""
+        return {
             'input_gain_db': float(self.view.gain_slider.get()),
             'air_gain_db': float(self.view.air_slider.get()),
             'stereo_width_db': float(self.view.width_slider.get()),
@@ -417,7 +464,70 @@ class UIController:
             'target_lufs': float(self.view.lufs_slider.get()),
             'glue_db': float(self.view.glue_slider.get())
         }
-        
+
+    def trigger_preview_render(self):
+        """Tier 1: render a short window around the playback head for near-instant feedback."""
+        if self.is_preview_rendering or self.dry_audio is None:
+            return
+
+        self.is_preview_rendering = True
+        self.view.status_label.config(text="⚡ Live Preview...")
+        params = self._get_current_params()
+        threading.Thread(target=self._preview_render_task, args=(params,), daemon=True).start()
+
+    def _preview_render_task(self, params):
+        """Process only a short window of audio for real-time feedback."""
+        try:
+            sr = self.sample_rate
+            total_frames = len(self.dry_audio)
+            preview_frames = int(self.PREVIEW_DURATION_SEC * sr)
+
+            # Centre the window on current playback position
+            head = self.player.current_frame if self.player.is_playing else 0
+            # Give a small lead-in so the very start of the preview sounds right
+            start = max(0, head - int(0.5 * sr))
+            end = min(total_frames, start + preview_frames)
+            # If near the end, shift the window back
+            if end - start < preview_frames and start > 0:
+                start = max(0, end - preview_frames)
+
+            dry_window = self.dry_audio[start:end]
+
+            # Use lightweight params: skip full LUFS normalisation & expensive limiter
+            # so the render finishes in <300ms even on slow CPUs.
+            preview_params = dict(params)
+            preview_params['target_lufs'] = None   # Skip LUFS normalisation
+
+            processed_window = self.processor.process_preview(dry_window, **preview_params)
+
+            # Build a full-length buffer so the player doesn't jump:
+            # keep dry audio outside the preview window, hot-patch the preview section.
+            if self.player_ready_wet is not None:
+                full_preview = self.player_ready_wet.copy()
+            elif self.player_ready_dry is not None:
+                full_preview = self.player_ready_dry.copy()
+            else:
+                full_preview = np.ascontiguousarray(self.dry_audio, dtype=np.float32)
+
+            processed_f32 = np.ascontiguousarray(processed_window, dtype=np.float32)
+            full_preview[start:start + len(processed_f32)] = processed_f32
+
+            self.view.vis_queue.put({'type': 'preview_complete', 'data': full_preview})
+        except Exception as e:
+            pass  # Silent fail — full render will cover it
+        finally:
+            self.is_preview_rendering = False
+
+    def trigger_render(self):
+        if self.is_rendering or self.dry_audio is None:
+            # Check again later if we are currently mid-render
+            if self.is_rendering:
+                self.full_render_timer = self.view.after(200, self.trigger_render)
+            return
+
+        self.is_rendering = True
+        self.view.status_label.config(text="Rendering Full Mix...")
+        params = self._get_current_params()
         threading.Thread(target=self._render_task, args=(params,), daemon=True).start()
         
     EXPORT_SUCCESS_MESSAGES = [
@@ -489,11 +599,18 @@ class UIController:
         self.player_ready_wet = np.ascontiguousarray(processed_audio, dtype=np.float32)
         
         self.is_rendering = False
-        self.view.status_label.config(text="Preview Ready")
+        self.view.status_label.config(text="Ready ✓")
         
-        # If currently listening to B (Wet), hotly update the player buffer
+        # Full render is done — always hot-swap the player to the high-quality buffer
         if self.listen_mode == "B":
             self.player.set_buffer(self.player_ready_wet, self.sample_rate)
+
+    def _on_preview_complete(self, preview_buffer):
+        """Hot-swap player to the fast preview buffer for near-instant audition."""
+        # Only update if the user is already on the B (Wet) channel
+        if self.listen_mode == "B":
+            self.player.set_buffer(preview_buffer, self.sample_rate)
+        self.view.status_label.config(text="⚡ Live Preview")
 
     def _on_render_error(self, err_msg):
         self.is_rendering = False
@@ -879,3 +996,198 @@ class UIController:
     def run(self):
         self._sample_wave_loop() # Kick off visual loop safely
         self.view.mainloop()
+
+
+# ---------------------------------------------------------------------------
+# Helper dialogs — defined at module level so they can be used by UIController
+# ---------------------------------------------------------------------------
+
+class _ReferenceSourceDialog(tk.Toplevel):
+    """
+    Small modal that lets the user pick:
+      (A) a local WAV file, or
+      (B) paste a YouTube URL.
+    """
+
+    def __init__(self, parent, callback):
+        super().__init__(parent)
+        self.callback = callback
+        self.title("Load Reference Track")
+        self.resizable(False, False)
+        self.grab_set()  # Modal
+        self.configure(bg="#1A1A2E")
+
+        # ── Title ──────────────────────────────────────────────────────────
+        tk.Label(
+            self, text="Choose a Reference Source",
+            bg="#1A1A2E", fg="#FFFFFF",
+            font=("Segoe UI", 13, "bold")
+        ).pack(padx=30, pady=(20, 4))
+
+        tk.Label(
+            self,
+            text="A reference track shapes the tonal balance of your master.\n"
+                 "Support: local WAV  •  YouTube URL (auto-downloaded)",
+            bg="#1A1A2E", fg="#AAAACC",
+            font=("Segoe UI", 9), justify="center"
+        ).pack(padx=30, pady=(0, 16))
+
+        sep = tk.Frame(self, bg="#3A3A5C", height=1)
+        sep.pack(fill=tk.X, padx=20)
+
+        # ── Option A: Local file ───────────────────────────────────────────
+        btn_file = tk.Button(
+            self,
+            text="📂  Browse Local File…",
+            bg="#2A2A4E", fg="#FFFFFF",
+            activebackground="#3A3A6E", activeforeground="#FFFFFF",
+            relief="flat", bd=0,
+            font=("Segoe UI", 11),
+            cursor="hand2",
+            padx=20, pady=12,
+            command=self._pick_file,
+        )
+        btn_file.pack(fill=tk.X, padx=20, pady=(16, 6))
+
+        # ── Option B: YouTube ──────────────────────────────────────────────
+        yt_frame = tk.Frame(self, bg="#1A1A2E")
+        yt_frame.pack(fill=tk.X, padx=20, pady=(6, 4))
+
+        tk.Label(
+            yt_frame, text="▶  YouTube URL",
+            bg="#1A1A2E", fg="#FF4444",
+            font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w")
+
+        tk.Label(
+            yt_frame, text="Paste any YouTube link — audio streams at up to 256 kbps,\n"
+                           "which is perfect for tonal reference matching.",
+            bg="#1A1A2E", fg="#888899",
+            font=("Segoe UI", 8), justify="left"
+        ).pack(anchor="w", pady=(2, 6))
+
+        url_row = tk.Frame(yt_frame, bg="#1A1A2E")
+        url_row.pack(fill=tk.X)
+
+        self.url_var = tk.StringVar()
+        self.url_entry = tk.Entry(
+            url_row,
+            textvariable=self.url_var,
+            bg="#0D0D1E", fg="#FFFFFF", insertbackground="#FFFFFF",
+            relief="flat", bd=0,
+            font=("Segoe UI", 10),
+        )
+        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True,
+                            ipady=8, ipadx=6)
+        self.url_entry.bind("<Return>", lambda _: self._use_youtube())
+
+        btn_yt = tk.Button(
+            url_row,
+            text="Use",
+            bg="#FF4444", fg="#FFFFFF",
+            activebackground="#FF6666", activeforeground="#FFFFFF",
+            relief="flat", bd=0,
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+            padx=14, pady=8,
+            command=self._use_youtube,
+        )
+        btn_yt.pack(side=tk.LEFT, padx=(6, 0))
+
+        # ── Cancel ─────────────────────────────────────────────────────────
+        tk.Frame(self, bg="#3A3A5C", height=1).pack(fill=tk.X, padx=20, pady=16)
+        tk.Button(
+            self, text="Cancel",
+            bg="#1A1A2E", fg="#888899",
+            activebackground="#2A2A3E", activeforeground="#CCCCCC",
+            relief="flat", bd=0,
+            font=("Segoe UI", 9),
+            cursor="hand2",
+            command=self.destroy,
+        ).pack(pady=(0, 14))
+
+        # Centre over parent
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{px + (pw - w)//2}+{py + (ph - h)//2}")
+
+    def _pick_file(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Select Reference Audio File",
+            filetypes=(
+                ("Audio files", "*.wav *.flac *.mp3 *.aac *.ogg *.m4a"),
+                ("WAV files", "*.wav"),
+                ("All files", "*.*"),
+            )
+        )
+        if path:
+            self.destroy()
+            self.callback('file', path)
+
+    def _use_youtube(self):
+        from engine.io.youtube_ref import is_youtube_url
+        url = self.url_var.get().strip()
+        if not url:
+            return
+        if not is_youtube_url(url):
+            tk.messagebox.showwarning(
+                "Invalid URL",
+                "That doesn't look like a YouTube URL.\n\n"
+                "Examples:\n"
+                "  https://www.youtube.com/watch?v=...\n"
+                "  https://youtu.be/...",
+                parent=self,
+            )
+            return
+        self.destroy()
+        self.callback('youtube', url)
+
+
+class _YouTubeProgressWindow(tk.Toplevel):
+    """Small non-modal progress popup shown while yt-dlp downloads."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Downloading Reference…")
+        self.resizable(False, False)
+        self.configure(bg="#1A1A2E")
+        self.protocol("WM_DELETE_WINDOW", lambda: None)  # prevent close
+
+        tk.Label(
+            self, text="⬇  Fetching YouTube Audio",
+            bg="#1A1A2E", fg="#FFFFFF",
+            font=("Segoe UI", 12, "bold")
+        ).pack(padx=30, pady=(20, 4))
+
+        self.msg_var = tk.StringVar(value="Starting…")
+        tk.Label(
+            self, textvariable=self.msg_var,
+            bg="#1A1A2E", fg="#AAAACC",
+            font=("Segoe UI", 9), width=48, anchor="w"
+        ).pack(padx=30, pady=(0, 8))
+
+        bar_bg = tk.Frame(self, bg="#2A2A4E", height=6)
+        bar_bg.pack(fill=tk.X, padx=30, pady=(0, 20))
+        bar_bg.pack_propagate(False)
+
+        self.bar_fill = tk.Frame(bar_bg, bg="#00D2FF", height=6)
+        self.bar_fill.place(relx=0, rely=0, relheight=1, relwidth=0)
+
+        # Centre
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{px + (pw - w)//2}+{py + (ph - h)//2}")
+
+    def update(self, pct: float, msg: str):
+        """Update progress bar and message. Called from main thread."""
+        try:
+            self.msg_var.set(msg)
+            self.bar_fill.place(relwidth=max(0.0, min(1.0, pct / 100.0)))
+        except tk.TclError:
+            pass  # window may have closed

@@ -259,6 +259,22 @@
             "mono_freq": 250.0,
             "target_lufs": -6.0,
             "description": "Maximum competitive loudness; utilizes extreme multiband clipping and heavy M/S glue."
+        },
+        "Melesia E": {
+            "target_lufs": -12.0,
+            "air_gain": 1.5,
+            "stereo_width": 1.4,
+            "saturation_mode": "Tape",
+            "drive_low": 1.0,
+            "drive_mid": 1.5,
+            "drive_high": 0.5,
+            "exciter_bypass": false,
+            "mono_freq": 140.0,
+            "mono_bypass": false,
+            "input_gain": 8.903234376171026,
+            "glue": 2.5,
+            "description": "User Custom Preset",
+            "is_custom": true
         }
     }
 }

@@ -111,6 +111,77 @@ class AudioProcessor:
 
         return audio_data
 
+    def process_preview(self, audio_data: np.ndarray, input_gain_db: float = 0.0,
+                        air_gain_db: float = 2.0,
+                        drive_low_db: float = 0.0, drive_mid_db: float = 0.0,
+                        drive_high_db: float = 0.0, target_lufs: float = None,
+                        exciter_bypass: bool = False, mono_freq: float = 150.0,
+                        mono_bypass: bool = False, stereo_width_db: float = 0.0,
+                        saturation_mode: str = "Soft Clip",
+                        match_eq_fir: np.ndarray = None, match_amount: float = 1.0,
+                        glue_db: float = 0.0) -> np.ndarray:
+        """
+        Fast preview render — identical DSP chain to process() but replaces the
+        4x oversampled true-peak limiter with a simple hard clip and skips full
+        LUFS normalisation.  Suitable for real-time slider feedback only.
+        Export always uses the full process() path.
+        """
+        if audio_data.dtype != np.float64:
+            audio_data = audio_data.astype(np.float64)
+        else:
+            audio_data = audio_data.copy()
+
+        # 0. Input Gain
+        if input_gain_db != 0.0:
+            audio_data *= 10 ** (input_gain_db / 20.0)
+
+        # 1. Matching EQ
+        if match_eq_fir is not None and match_amount > 0.0:
+            audio_data = self.apply_matching_eq(audio_data, match_eq_fir, match_amount)
+
+        # 2. M/S Processing
+        is_stereo = (audio_data.ndim > 1 and audio_data.shape[1] > 1)
+        if is_stereo:
+            L = audio_data[:, 0]
+            R = audio_data[:, 1]
+            mid  = (L + R) / 1.414
+            side = (L - R) / 1.414
+            mid  = mid.reshape(-1, 1)
+            side = side.reshape(-1, 1)
+
+            mid  = self.linear_phase_eq(mid,  air_gain_db=0.0)
+            side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
+
+            if stereo_width_db != 0.0:
+                side = self.apply_stereo_width(side, stereo_width_db)
+
+            if glue_db > 0.0:
+                mid_threshold  = -12.0 - glue_db
+                mid  = self.compressor_vca(mid,  threshold_db=mid_threshold,  ratio=4.0, attack_ms=15.0, release_ms=120.0)
+                side_threshold = -18.0 - (glue_db / 2.0)
+                side = self.compressor_vca(side, threshold_db=side_threshold, ratio=1.5, attack_ms=30.0, release_ms=250.0)
+
+            if not exciter_bypass:
+                mid  = self.multiband_drive(mid,  drive_low_db,       drive_mid_db,       drive_high_db,       mode=saturation_mode)
+                side = self.multiband_drive(side, drive_low_db / 2.0, drive_mid_db / 2.0, drive_high_db / 2.0, mode=saturation_mode)
+
+            if not mono_bypass:
+                side = self.mono_maker(side, mono_freq)
+
+            dec_L = (mid + side) / 1.414
+            dec_R = (mid - side) / 1.414
+            audio_data = np.hstack((dec_L, dec_R))
+        else:
+            audio_data = self.linear_phase_eq(audio_data, air_gain_db)
+            if not exciter_bypass:
+                audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db, mode=saturation_mode)
+
+        # 3. Fast ceiling clip (replaces the expensive 4x oversampled limiter)
+        ceiling = 10 ** (-1.0 / 20.0)  # -1 dBFS
+        audio_data = np.clip(audio_data, -ceiling, ceiling)
+
+        return audio_data
+
     def apply_stereo_width(self, side_channel: np.ndarray, width_db: float) -> np.ndarray:
         """
         Enhances or narrows the stereo field by adjusting the Side channel gain.
@@ -333,32 +404,31 @@ class AudioProcessor:
                        release_ms: float = 100.0) -> np.ndarray:
         """
         A high-fidelity VCA-style compressor with a soft knee.
-        Uses a recursive envelope follower for smooth gain reduction.
+        Uses a vectorised envelope follower (scipy lfilter) for speed.
         """
         if ratio <= 1.0: return audio_data
         
-        # Convert constants
-        threshold_linear = 10 ** (threshold_db / 20.0)
-        
         # Envelope follower coefficients
-        # alpha = 1 - exp(-1 / (fs * time))
-        att_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (attack_ms / 1000.0)))
+        att_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (attack_ms  / 1000.0)))
         rel_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (release_ms / 1000.0)))
         
         # Detect signal level (Rectified)
         det = np.max(np.abs(audio_data), axis=1) if audio_data.ndim > 1 else np.abs(audio_data).flatten()
-        
-        # Envelope following
-        envelope = np.zeros_like(det)
-        curr_env = 0.0
-        for i in range(len(det)):
-            target = det[i]
-            alpha = att_alpha if target > curr_env else rel_alpha
-            curr_env += alpha * (target - curr_env)
-            envelope[i] = curr_env
-            
+
+        # Vectorised two-stage envelope:
+        # Pass 1 — attack  (fast smoothing upward)
+        b_att = [att_alpha]
+        a_att = [1.0, -(1.0 - att_alpha)]
+        env_att = signal.lfilter(b_att, a_att, det)
+
+        # Pass 2 — release (slow smoothing of the attack envelope downward)
+        b_rel = [rel_alpha]
+        a_rel = [1.0, -(1.0 - rel_alpha)]
+        # Feed the max of det and the attack envelope to keep peaks, then release
+        combined = np.maximum(det, env_att)  # hold peaks
+        envelope = signal.lfilter(b_rel, a_rel, combined)
+
         # Calculate Gain Reduction
-        # GR (dB) = - (1 - 1/ratio) * (Env_dB - Threshold_dB) if Env_dB > Threshold_dB
         env_db = 20 * np.log10(envelope + 1e-10)
         
         gain_reduction_db = np.zeros_like(env_db)
@@ -368,7 +438,6 @@ class AudioProcessor:
         # Soft-Knee Smoothing (3dB knee)
         knee_db = 3.0
         knee_indices = (env_db > (threshold_db - knee_db)) & (env_db < (threshold_db + knee_db))
-        # Simple parabolic knee
         gain_reduction_db[knee_indices] *= ((env_db[knee_indices] - (threshold_db - knee_db)) / (2 * knee_db))**2
         
         gain_linear = 10 ** (gain_reduction_db / 20.0)
