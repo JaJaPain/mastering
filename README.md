@@ -66,7 +66,14 @@ Match your tonal balance to your favorite professional song. Import any referenc
 - **Curve Generation** — Generates a custom Linear Phase FIR filter.
 - **Blend Control** — Apply the professional "curve" to your own track with a variable blend (0-100%).
 
-### 5. **Interactive Full-Song Navigator**
+### 5. **AI-Powered Stem Splitter 🔬**
+Isolate the core elements of any mix with industry-leading AI separation.
+- **Deep Separation:** Extract Vocals, Drums, Bass, and Other (instruments) with clinical precision using the `htdemucs` hybrid transformer model.
+- **Zero-Coupling Engine:** Runs as a self-contained background process, keeping the UI responsive while the AI "crunches" the audio.
+- **Fun Included:** Stay entertained during extraction with real-time status updates and engineering quips.
+- **One-Click Export:** Directly saves stems to your chosen folder and opens it automatically upon completion.
+
+### 6. **Interactive Full-Song Navigator**
 The bottom of the UI features a "Full Song Visualizer." Click anywhere on the waveform silhouette to instantly seek to that point in the track. Perfect for fast navigation between the verse and the chorus.
 
 ---

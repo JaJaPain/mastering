@@ -2,6 +2,7 @@ import threading
 import os
 import queue
 import random
+import logging
 import numpy as np
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -818,6 +819,81 @@ class UIController:
             return
             
         self.start_preset_battle() # Pop up the battle dialog
+
+    def on_landing_stem_split(self):
+        """Action for the 'Stem Split' button on the landing page."""
+        if self.dry_audio is None:
+            messagebox.showwarning("Warning", "Please load an audio file first!")
+            return
+        
+        # --- First-run model download warning ---
+        # Check if the htdemucs model has already been cached
+        model_cache = os.path.join(os.path.expanduser("~"), ".cache", "torch", "hub", "checkpoints")
+        model_exists = os.path.isdir(model_cache) and any("htdemucs" in f.lower() for f in os.listdir(model_cache))
+        
+        if not model_exists:
+            proceed = messagebox.askyesno(
+                "First-Time Setup Required",
+                "This is your first time using Stem Split!\n\n"
+                "Demucs needs to download its AI model (~300 MB).\n"
+                "This only happens once — future runs will be instant.\n\n"
+                "The separation itself may take 1–10 minutes\n"
+                "depending on your hardware (GPU = fast, CPU = slower).\n\n"
+                "Continue?"
+            )
+            if not proceed:
+                return
+        
+        # Let the user pick an output directory
+        from tkinter import filedialog as fd
+        
+        output_dir = fd.askdirectory(
+            title="Choose Output Folder for Stems",
+            initialdir=os.path.dirname(self.loaded_file_path),
+        )
+        if not output_dir:
+            return
+        
+        # Import the self-contained stem module (zero-coupling)
+        from stem_logic import StemWorker
+        
+        # Load our funny quips for the rotating status messages
+        quips = []
+        try:
+            import json
+            quips_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "loading_messages.json")
+            with open(quips_path, "r", encoding="utf-8") as f:
+                quips = json.load(f)
+        except Exception:
+            quips = ["Working hard…", "Still crunching…", "Almost there… maybe."]
+        
+        # Show a progress/log window with rotating quips
+        prog_win = _StemProgressWindow(self.view, os.path.basename(self.loaded_file_path), quips)
+
+        def on_complete(out_path):
+            def finish():
+                prog_win.mark_complete(out_path)
+            self.view.after(0, finish)
+
+        def on_error(exc):
+            def show_err():
+                prog_win.mark_error(str(exc))
+            self.view.after(0, show_err)
+
+        worker = StemWorker(on_complete=on_complete, on_error=on_error)
+        
+        # Redirect the StemWorker logger to our progress window
+        stem_logger = logging.getLogger("stem_logic")
+        _handler = _TkLogHandler(self.view, prog_win)
+        _handler.setFormatter(logging.Formatter("%(message)s"))
+        stem_logger.addHandler(_handler)
+        
+        # Store reference so cancel button can kill it
+        prog_win.set_worker(worker)
+        
+        worker.run_separation(self.loaded_file_path, output_dir)
+
+
         
     def compare_custom_files(self):
         from ui.dialogs.preset_battle import CustomCompareDialog
@@ -1191,3 +1267,217 @@ class _YouTubeProgressWindow(tk.Toplevel):
             self.bar_fill.place(relwidth=max(0.0, min(1.0, pct / 100.0)))
         except tk.TclError:
             pass  # window may have closed
+
+
+class _TkLogHandler(logging.Handler):
+    """Routes Python logging records into a _StemProgressWindow from any thread."""
+
+    def __init__(self, tk_root, progress_window):
+        super().__init__()
+        self.tk_root = tk_root
+        self.progress_window = progress_window
+
+    def emit(self, record):
+        msg = self.format(record)
+        try:
+            self.tk_root.after(0, lambda m=msg: self.progress_window.append_log(m))
+        except Exception:
+            pass  # widget destroyed
+
+
+class _StemProgressWindow(tk.Toplevel):
+    """
+    Progress window for stem separation.
+    Shows a pulsing progress bar, rotating funny quips, and an elapsed timer
+    so the user knows the app isn't frozen.
+    """
+
+    def __init__(self, parent, filename, quips=None):
+        super().__init__(parent)
+        self.title("Stem Separation")
+        self.resizable(False, False)
+        self.configure(bg="#1A1A2E")
+        self.protocol("WM_DELETE_WINDOW", lambda: None)  # prevent accidental close
+        self._worker = None
+        self._quips = quips or ["Working hard…", "Still crunching…", "Almost there… maybe."]
+        self._quip_index = 0
+        self._elapsed = 0
+
+        # ── Title ──
+        tk.Label(
+            self, text="🔬  Splitting Stems",
+            bg="#1A1A2E", fg="#FFFFFF",
+            font=("Segoe UI", 14, "bold")
+        ).pack(padx=30, pady=(20, 4))
+
+        tk.Label(
+            self, text=f"Processing: {filename}",
+            bg="#1A1A2E", fg="#AAAACC",
+            font=("Segoe UI", 9)
+        ).pack(padx=30, pady=(0, 12))
+
+        # ── Pulsing progress bar ──
+        bar_bg = tk.Frame(self, bg="#2A2A4E", height=8)
+        bar_bg.pack(fill=tk.X, padx=30, pady=(0, 16))
+        bar_bg.pack_propagate(False)
+
+        self.bar_fill = tk.Frame(bar_bg, bg="#00D2FF", height=8)
+        self.bar_fill.place(relx=0, rely=0, relheight=1, relwidth=0)
+        self._pulse_width = 0.0
+        self._pulse_dir = 1
+        self._running = True
+
+        # ── Rotating quip display ──
+        self.quip_var = tk.StringVar(value=self._get_next_quip())
+        quip_label = tk.Label(
+            self, textvariable=self.quip_var,
+            bg="#1A1A2E", fg="#88CCAA",
+            font=("Segoe UI", 11, "italic"),
+            wraplength=420, justify="center"
+        )
+        quip_label.pack(padx=30, pady=(0, 8))
+
+        # ── Elapsed timer ──
+        self.timer_var = tk.StringVar(value="⏱  Elapsed: 0:00")
+        tk.Label(
+            self, textvariable=self.timer_var,
+            bg="#1A1A2E", fg="#666688",
+            font=("Consolas", 10)
+        ).pack(padx=30, pady=(0, 6))
+
+        # ── Status label (updated on complete/error) ──
+        self.status_var = tk.StringVar(value="Demucs is running — sit back and relax…")
+        tk.Label(
+            self, textvariable=self.status_var,
+            bg="#1A1A2E", fg="#AAAACC",
+            font=("Segoe UI", 9), anchor="center"
+        ).pack(padx=30, fill=tk.X, pady=(0, 12))
+
+        # ── Button row ──
+        btn_row = tk.Frame(self, bg="#1A1A2E")
+        btn_row.pack(padx=30, pady=(0, 20), fill=tk.X)
+
+        self.cancel_btn = tk.Button(
+            btn_row, text="Cancel",
+            bg="#2A2A4E", fg="#FFFFFF",
+            activebackground="#3A3A6E", activeforeground="#FFFFFF",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+            cursor="hand2", padx=16, pady=6,
+            command=self._on_cancel,
+        )
+        self.cancel_btn.pack(side=tk.LEFT)
+
+        self.open_btn = tk.Button(
+            btn_row, text="Open Folder",
+            bg="#00885A", fg="#FFFFFF",
+            activebackground="#00AA6E", activeforeground="#FFFFFF",
+            relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
+            cursor="hand2", padx=16, pady=6,
+            state="disabled",
+            command=self._on_open_folder,
+        )
+        self.open_btn.pack(side=tk.RIGHT)
+
+        self._output_path = None
+
+        # Centre over parent
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{px + (pw - w)//2}+{py + (ph - h)//2}")
+
+        # Start animations
+        self._animate_pulse()
+        self._rotate_quip()
+        self._tick_timer()
+
+    def _get_next_quip(self):
+        """Pick the next quip from the shuffled list."""
+        if not self._quips:
+            return "Working…"
+        # Shuffle on first pass
+        if self._quip_index == 0:
+            random.shuffle(self._quips)
+        quip = self._quips[self._quip_index % len(self._quips)]
+        self._quip_index += 1
+        return quip
+
+    def set_worker(self, worker):
+        """Store a reference to the StemWorker so we can cancel it."""
+        self._worker = worker
+
+    def append_log(self, line):
+        """Accept log lines (keeps interface compatible with _TkLogHandler)."""
+        # We don't show raw logs anymore, but we could update status if needed
+        pass
+
+    def mark_complete(self, output_path):
+        """Called when stems are finished."""
+        self._running = False
+        self._output_path = output_path
+        self.bar_fill.configure(bg="#00DD66")
+        self.bar_fill.place(relwidth=1.0)
+        mins, secs = divmod(self._elapsed, 60)
+        self.quip_var.set("🎉  All stems extracted successfully!")
+        self.status_var.set(f"✅  Done in {int(mins)}:{int(secs):02d} — Stems saved to: {output_path}")
+        self.cancel_btn.config(text="Close", command=self.destroy)
+        self.open_btn.config(state="normal")
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def mark_error(self, error_msg):
+        """Called when separation fails."""
+        self._running = False
+        self.bar_fill.configure(bg="#FF4444")
+        self.bar_fill.place(relwidth=1.0)
+        self.quip_var.set("Something went wrong…")
+        self.status_var.set(f"❌  Error: {error_msg}")
+        self.cancel_btn.config(text="Close", command=self.destroy)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _on_cancel(self):
+        if self._worker:
+            self._worker.cancel()
+        self._running = False
+        self.destroy()
+
+    def _on_open_folder(self):
+        if self._output_path:
+            os.startfile(self._output_path)
+
+    def _animate_pulse(self):
+        """Animate a pulsing progress bar while running."""
+        if not self._running:
+            return
+        try:
+            self._pulse_width += 0.015 * self._pulse_dir
+            if self._pulse_width >= 0.6:
+                self._pulse_dir = -1
+            elif self._pulse_width <= 0.05:
+                self._pulse_dir = 1
+            self.bar_fill.place(relwidth=self._pulse_width)
+            self.after(40, self._animate_pulse)
+        except tk.TclError:
+            pass
+
+    def _rotate_quip(self):
+        """Swap the quip every 4 seconds."""
+        if not self._running:
+            return
+        try:
+            self.quip_var.set(self._get_next_quip())
+            self.after(4000, self._rotate_quip)
+        except tk.TclError:
+            pass
+
+    def _tick_timer(self):
+        """Update the elapsed time counter every second."""
+        if not self._running:
+            return
+        try:
+            self._elapsed += 1
+            mins, secs = divmod(self._elapsed, 60)
+            self.timer_var.set(f"⏱  Elapsed: {int(mins)}:{int(secs):02d}")
+            self.after(1000, self._tick_timer)
+        except tk.TclError:
+            pass

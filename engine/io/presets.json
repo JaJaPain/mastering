@@ -275,6 +275,22 @@
             "glue": 2.5,
             "description": "User Custom Preset",
             "is_custom": true
+        },
+        "ME Studio": {
+            "target_lufs": -13.0,
+            "air_gain": 0.5,
+            "stereo_width": 1.3,
+            "saturation_mode": "Tape",
+            "drive_low": 1.5,
+            "drive_mid": 2.5,
+            "drive_high": 1.0,
+            "exciter_bypass": false,
+            "mono_freq": 150.0,
+            "mono_bypass": false,
+            "input_gain": 7.085003114217791,
+            "glue": 3.0,
+            "description": "User Custom Preset",
+            "is_custom": true
         }
     }
 }

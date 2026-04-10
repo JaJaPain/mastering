@@ -13,7 +13,7 @@ class LandingView(ttk.Frame):
         
         # Center container
         self.container = ttk.Frame(self, style="Panel.TFrame")
-        self.container.place(relx=0.5, rely=0.5, anchor="center", width=850, height=450)
+        self.container.place(relx=0.5, rely=0.5, anchor="center", width=850, height=530)
         
         # Title & Welcome
         ttk.Label(self.container, text="Welcome to High-Fidelity Mastering", 
@@ -74,26 +74,43 @@ class LandingView(ttk.Frame):
                                     style="Panel.TLabel", font=("Segoe UI", 10, "italic"))
         self.file_label.pack(side=tk.LEFT)
         
-        # --- RIGHT GROUP (Isolated) ---
-        right_box = ttk.Frame(main_content, style="Panel.TFrame")
-        right_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(10, 0))
+        # --- RIGHT GROUP (Stacked cards) ---
+        right_box = tk.Frame(main_content, bg=Colors.BG_PANEL, highlightbackground="#555", highlightcolor="#555", highlightthickness=1)
+        right_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
         
         right_inner = ttk.Frame(right_box, style="Panel.TFrame")
-        right_inner.pack(fill=tk.BOTH, expand=True, padx=0, pady=15)
+        right_inner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        right_cards = ttk.Frame(right_inner, style="Panel.TFrame")
+        right_cards.pack(fill=tk.BOTH, expand=True)
         
         # Option 3: Compare Custom Files
-        custom_card = ttk.Frame(right_inner, style="Header.TFrame", padding=20)
-        custom_card.pack(fill=tk.BOTH, expand=True)
+        custom_card = ttk.Frame(right_cards, style="Header.TFrame", padding=20)
+        custom_card.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(0, 5))
         
         ttk.Label(custom_card, text="🎧 Track Match", style="Header.TLabel", 
-                  font=("Segoe UI", 14, "bold")).pack(pady=(0, 15))
+                  font=("Segoe UI", 14, "bold")).pack(pady=(0, 10))
         
-        ttk.Label(custom_card, text="Load up to 4 exact\nlength audio files to\ncompare mixes side-by-side.",
-                  style="Header.TLabel", font=("Segoe UI", 10), justify=tk.CENTER).pack(pady=(0, 20))
+        ttk.Label(custom_card, text="Load up to 4 exact length audio\nfiles to compare mixes side-by-side.",
+                  style="Header.TLabel", font=("Segoe UI", 10), justify=tk.CENTER).pack(pady=(0, 10))
         
         self.custom_btn = ttk.Button(custom_card, text="Compare Files", style="ActiveToggle.TButton",
                                      command=self.controller.compare_custom_files)
-        self.custom_btn.pack(side=tk.BOTTOM, pady=10)
+        self.custom_btn.pack(side=tk.BOTTOM, pady=5)
+        
+        # Option 4: Stem Splitter
+        stem_card = ttk.Frame(right_cards, style="Header.TFrame", padding=20)
+        stem_card.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(5, 0))
+        
+        ttk.Label(stem_card, text="🔬 Stem Split", style="Header.TLabel", 
+                  font=("Segoe UI", 14, "bold")).pack(pady=(0, 10))
+        
+        ttk.Label(stem_card, text="Isolate vocals, drums, bass &\ninstruments using AI separation.",
+                  style="Header.TLabel", font=("Segoe UI", 10), justify=tk.CENTER).pack(pady=(0, 10))
+        
+        self.stem_btn = ttk.Button(stem_card, text="Split Stems", style="ActiveToggle.TButton",
+                                   command=self.controller.on_landing_stem_split)
+        self.stem_btn.pack(side=tk.BOTTOM, pady=5)
         
         # Bottom Tip
         ttk.Label(self.container, text="Tip: You can always switch modes later from the main console.", 
