@@ -61,6 +61,7 @@ class UIController:
         self.view.drive_low_slider.config(command=self.on_slider_change)
         self.view.drive_mid_slider.config(command=self.on_slider_change)
         self.view.drive_high_slider.config(command=self.on_slider_change)
+        self.view.parallel_slider.config(command=self.on_slider_change)
         self.view.lufs_slider.config(command=self.on_slider_change)
         self.view.exciter_bypass_chk.config(command=self.on_slider_change)
         self.view.sat_mode_combo.bind("<<ComboboxSelected>>", self.on_slider_change)
@@ -463,7 +464,8 @@ class UIController:
             'match_eq_fir': self.match_fir_coeff,
             'match_amount': float(self.view.match_amount_slider.get()) / 100.0,
             'target_lufs': float(self.view.lufs_slider.get()),
-            'glue_db': float(self.view.glue_slider.get())
+            'glue_db': float(self.view.glue_slider.get()),
+            'parallel_comp': float(self.view.parallel_slider.get()) / 100.0
         }
 
     def trigger_preview_render(self):

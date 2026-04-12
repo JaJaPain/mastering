@@ -20,7 +20,7 @@ class AudioProcessor:
                 mono_freq: float = 150.0, mono_bypass: bool = False,
                 stereo_width_db: float = 0.0, saturation_mode: str = "Soft Clip",
                 match_eq_fir: np.ndarray = None, match_amount: float = 1.0,
-                glue_db: float = 0.0) -> np.ndarray:
+                glue_db: float = 0.0, parallel_comp: float = 0.0) -> np.ndarray:
         """
         Process the incoming audio data array.
         Forces audio_data to np.float64 to maximize headroom during DSP chain.
@@ -101,6 +101,19 @@ class AudioProcessor:
                 audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db, mode=saturation_mode)
             
 
+        # 3.5 Parallel Compression / NY Compression
+        if parallel_comp > 0.0:
+            # Create a heavily squashed version of the track
+            # Fast attack (2ms), moderate release (80ms), very low threshold (-24dB), high ratio
+            crushed = self.compressor_vca(audio_data, threshold_db=-24.0, ratio=8.0, attack_ms=2.0, release_ms=80.0)
+            
+            # Make up the gain that was lost in the crush 
+            # (approx 12-14dB so it sits just below 0)
+            crushed *= 10 ** (14.0 / 20.0) 
+            
+            # Blend it into the original track
+            audio_data = (audio_data * (1.0 - (parallel_comp * 0.4))) + (crushed * parallel_comp * 0.8)
+
         # 4. Loudness Matching (LUFS target)
         if target_lufs is not None:
             self.loudness_analyzer.target_lufs = target_lufs
@@ -119,7 +132,7 @@ class AudioProcessor:
                         mono_bypass: bool = False, stereo_width_db: float = 0.0,
                         saturation_mode: str = "Soft Clip",
                         match_eq_fir: np.ndarray = None, match_amount: float = 1.0,
-                        glue_db: float = 0.0) -> np.ndarray:
+                        glue_db: float = 0.0, parallel_comp: float = 0.0) -> np.ndarray:
         """
         Fast preview render — identical DSP chain to process() but replaces the
         4x oversampled true-peak limiter with a simple hard clip and skips full
@@ -175,6 +188,12 @@ class AudioProcessor:
             audio_data = self.linear_phase_eq(audio_data, air_gain_db)
             if not exciter_bypass:
                 audio_data = self.multiband_drive(audio_data, drive_low_db, drive_mid_db, drive_high_db, mode=saturation_mode)
+
+        # 2.5 Parallel Compression / NY Compression
+        if parallel_comp > 0.0:
+            crushed = self.compressor_vca(audio_data, threshold_db=-24.0, ratio=8.0, attack_ms=2.0, release_ms=80.0)
+            crushed *= 10 ** (14.0 / 20.0) 
+            audio_data = (audio_data * (1.0 - (parallel_comp * 0.4))) + (crushed * parallel_comp * 0.8)
 
         # 3. Fast ceiling clip (replaces the expensive 4x oversampled limiter)
         ceiling = 10 ** (-1.0 / 20.0)  # -1 dBFS

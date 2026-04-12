@@ -192,6 +192,18 @@ class MainView(tk.Tk):
         self.glue_slider = ttk.Scale(glue_frame, from_=0.0, to=12.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
         self.glue_slider.set(0.0)
         self.glue_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+
+        # Parallel Compression (New York Style)
+        parallel_frame = ttk.Frame(control_panel, style="Panel.TFrame")
+        parallel_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        lbl_parallel = ttk.Label(parallel_frame, text="Parallel Comp (%)", style="Panel.TLabel", width=15)
+        lbl_parallel.pack(side=tk.LEFT)
+        ToolTip(lbl_parallel, "Blends a heavily crushed 'New York' style compressor under the mix.\nFills the quiet 'valleys' and thickens the body without muddying peaks.")
+        
+        self.parallel_slider = ttk.Scale(parallel_frame, from_=0.0, to=100.0, orient=tk.HORIZONTAL, style="Horizontal.TScale")
+        self.parallel_slider.set(0.0)
+        self.parallel_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
         # Multi-Band Exciter Section
         exciter_header = ttk.Frame(control_panel, style="Panel.TFrame")
