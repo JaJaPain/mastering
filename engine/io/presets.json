@@ -10,7 +10,7 @@
             "saturation_mode": "Intelligent",
             "glue": 4.0,
             "mono_freq": 150.0,
-            "target_lufs": -9.0,
+            "target_lufs": -14.0,
             "description": "Punchy and aggressive; uses targeted Intelligent clipping for snappy drums and glued center."
         },
         "Alt Metal / Emo": {
@@ -23,7 +23,7 @@
             "saturation_mode": "Intelligent",
             "glue": 3.5,
             "mono_freq": 160.0,
-            "target_lufs": -11.0,
+            "target_lufs": -15.0,
             "description": "High-energy with vocal shimmer; balanced multiband grit for thick guitar walls."
         },
         "Acoustic / Introspective": {
@@ -36,7 +36,7 @@
             "saturation_mode": "Tape",
             "glue": 1.0,
             "mono_freq": 120.0,
-            "target_lufs": -14.0,
+            "target_lufs": -15.0,
             "description": "Transparent and dynamic; preserves natural timbre with subtle analog tape warmth."
         },
         "Streaming Standard": {
@@ -49,7 +49,7 @@
             "saturation_mode": "Soft Clip",
             "glue": 2.0,
             "mono_freq": 150.0,
-            "target_lufs": -14.0,
+            "target_lufs": -15.0,
             "description": "The safe choice for YouTube and Spotify; balanced glue and modern spectral clarity."
         },
         "Heavy Metal / Djent": {
@@ -62,7 +62,7 @@
             "saturation_mode": "Intelligent",
             "glue": 5.0,
             "mono_freq": 180.0,
-            "target_lufs": -8.0,
+            "target_lufs": -13.0,
             "description": "Maximum weight and density; aggressive Intelligent clipping for a wall-of-sound master."
         },
         "Pop / Radio": {
@@ -75,7 +75,7 @@
             "saturation_mode": "Intelligent",
             "glue": 2.5,
             "mono_freq": 150.0,
-            "target_lufs": -10.0,
+            "target_lufs": -14.5,
             "description": "Polished and bright; wide imaging with high-frequency shimmer and tight low-end glue."
         },
         "Hip-Hop / Trap": {
@@ -88,7 +88,7 @@
             "saturation_mode": "Intelligent",
             "glue": 4.5,
             "mono_freq": 180.0,
-            "target_lufs": -9.0,
+            "target_lufs": -14.0,
             "description": "Sub-frequency focus; heavy low-band drive keeps 808s hard while gluing the mix top."
         },
         "Lo-Fi / Chill": {
@@ -114,7 +114,7 @@
             "saturation_mode": "Intelligent",
             "glue": 5.5,
             "mono_freq": 200.0,
-            "target_lufs": -7.0,
+            "target_lufs": -12.0,
             "description": "High-energy club master; aggressive stereo width and maximum spectral density."
         },
         "Jazz / Fusion": {
@@ -153,7 +153,7 @@
             "saturation_mode": "Tape",
             "glue": 2.5,
             "mono_freq": 140.0,
-            "target_lufs": -12.0,
+            "target_lufs": -14.5,
             "description": "Warm mids and clear vocals; analog tape feel for roots and organic instrumentals."
         },
         "Blues / Soul": {
@@ -166,7 +166,7 @@
             "saturation_mode": "Tape",
             "glue": 3.0,
             "mono_freq": 150.0,
-            "target_lufs": -13.0,
+            "target_lufs": -15.0,
             "description": "Rich harmonic saturation; mimics vintage analog console and tape machine glue."
         },
         "Podcast / Spoken Word": {
@@ -192,7 +192,7 @@
             "saturation_mode": "Intelligent",
             "glue": 3.5,
             "mono_freq": 150.0,
-            "target_lufs": -11.0,
+            "target_lufs": -15.0,
             "description": "Neon vibes; extreme high-frequency shimmer and retro multiband saturation."
         },
         "Punk / Grunge": {
@@ -205,7 +205,7 @@
             "saturation_mode": "Intelligent",
             "glue": 4.5,
             "mono_freq": 160.0,
-            "target_lufs": -10.0,
+            "target_lufs": -14.5,
             "description": "Distorted and raw; heavy mid-range saturation for aggressive, unpolished energy."
         },
         "Cinematic / Trailer": {
@@ -218,7 +218,7 @@
             "saturation_mode": "Intelligent",
             "glue": 5.0,
             "mono_freq": 180.0,
-            "target_lufs": -8.0,
+            "target_lufs": -13.0,
             "description": "Wider than life; maximum imaging and high-impact multiband excitation for huge sweeps."
         },
         "Reggae / Dub": {
@@ -231,7 +231,7 @@
             "saturation_mode": "Tape",
             "glue": 4.0,
             "mono_freq": 180.0,
-            "target_lufs": -13.0,
+            "target_lufs": -15.0,
             "description": "Heavy sub-bass warmth; smooth, dark tape saturation focused on low-end impact."
         },
         "Indie / Dream Pop": {
@@ -244,7 +244,7 @@
             "saturation_mode": "Soft Clip",
             "glue": 2.5,
             "mono_freq": 140.0,
-            "target_lufs": -13.0,
+            "target_lufs": -15.0,
             "description": "Lush and texture-focused; wide stereo image with moderate, transparent glue."
         },
         "Extreme Loudness": {
@@ -257,11 +257,11 @@
             "saturation_mode": "Intelligent",
             "glue": 7.0,
             "mono_freq": 250.0,
-            "target_lufs": -6.0,
+            "target_lufs": -11.0,
             "description": "Maximum competitive loudness; utilizes extreme multiband clipping and heavy M/S glue."
         },
         "Melesia E": {
-            "target_lufs": -12.0,
+            "target_lufs": -14.5,
             "air_gain": 1.5,
             "stereo_width": 1.4,
             "saturation_mode": "Tape",
@@ -277,7 +277,7 @@
             "is_custom": true
         },
         "ME Studio": {
-            "target_lufs": -13.0,
+            "target_lufs": -15.0,
             "air_gain": 0.5,
             "stereo_width": 1.3,
             "saturation_mode": "Tape",

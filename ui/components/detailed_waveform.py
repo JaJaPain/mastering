@@ -43,12 +43,12 @@ class DetailedWaveform(tk.Canvas):
         reshaped_data = trimmed_data.reshape(n_points, chunk_size)
         waveform = np.max(reshaped_data, axis=1)
                 
-        # Scale 0-1
-        max_val = np.max(waveform) if len(waveform) > 0 else 1.0
-        if max_val > 0:
-            self.waveform_data = (waveform / max_val).tolist()
-        else:
-            self.waveform_data = [0.0] * n_points
+        # We DO NOT normalize to local max_val.
+        # The true peak limiter catches peaks at -1.0 dBFS (~0.89 linear).
+        # We want to represent actual digital amplitude 0 to 1.0.
+        # This way, heavily limited presets look dense, but don't look like they are clipping the UI.
+        waveform = np.clip(waveform, 0.0, 1.0)
+        self.waveform_data = waveform.tolist()
             
         self.draw()
 

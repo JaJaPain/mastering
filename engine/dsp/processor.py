@@ -476,8 +476,10 @@ class AudioProcessor:
         required_gain = np.where(lookahead_abs > ceiling_linear, ceiling_linear / lookahead_abs, 1.0)
         
         # Smooth out gain reduction (basic low-pass representation of attack/release times)
-        b_smooth, a_smooth = signal.butter(1, 100.0 / (self.sample_rate * oversample_factor / 2.0), btype='low')
-        smoothed_gain = signal.filtfilt(b_smooth, a_smooth, required_gain, axis=0)
+        # Using lfilter (forward only) ensures an instant duck based on the lookahead, 
+        # followed by a smooth release. We use 60Hz for an even smoother release (~16ms).
+        b_smooth, a_smooth = signal.butter(1, 60.0 / (self.sample_rate * oversample_factor / 2.0), btype='low')
+        smoothed_gain = signal.lfilter(b_smooth, a_smooth, required_gain, axis=0)
         
         # Ensure we only reduce gain, never boost
         smoothed_gain = np.clip(smoothed_gain, 0.0, 1.0)
