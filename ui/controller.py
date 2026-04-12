@@ -45,7 +45,7 @@ class UIController:
         
         self.view.export_btn.config(command=self.export_master)
         self.view.load_btn.config(command=self.load_audio_file)
-        self.view.compare_btn.config(command=self.start_preset_battle)
+        self.view.home_btn.config(command=self.view.show_landing_page)
         
         # Playback events — single toggle button
         self.view.play_btn.config(command=self.toggle_play)

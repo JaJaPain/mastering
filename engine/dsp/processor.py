@@ -59,7 +59,16 @@ class AudioProcessor:
             # 2. Targeted Processing
             
             # Linear Phase EQ (Air Shelf targeted strictly on the Side Channel for width)
+            # The 30Hz high-pass sub-cut is inherently applied during this step.
             mid = self.linear_phase_eq(mid, air_gain_db=0.0)
+            
+            # --- Mid Channel Mud Cleanup ---
+            # Wide -2dB dip at ~350Hz to remove mud from center
+            # Using parallel bandpass subtraction (approx 150Hz to 600Hz)
+            b_mud, a_mud = signal.butter(1, [150.0 / (self.sample_rate/2.0), 600.0 / (self.sample_rate/2.0)], btype='bandpass')
+            mud_band = signal.filtfilt(b_mud, a_mud, mid, axis=0)
+            mid = mid - (mud_band * 0.2) # ~ -2dB attenuation
+            
             side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
 
             # Stereo Widening
@@ -71,7 +80,8 @@ class AudioProcessor:
                 # Mid Channel: Heavy Punch (High ratio, fast-ish attack)
                 # We translate glue_db into a threshold. 0-12dB range.
                 mid_threshold = -12.0 - glue_db 
-                mid = self.compressor_vca(mid, threshold_db=mid_threshold, ratio=4.0, attack_ms=15.0, release_ms=120.0)
+                # Add 120Hz HP to the sidechain so the core kick doesn't trigger pumping
+                mid = self.compressor_vca(mid, threshold_db=mid_threshold, ratio=4.0, attack_ms=15.0, release_ms=120.0, sidechain_hp_hz=120.0)
                 
                 # Side Channel: Breathy Air (Low ratio, slow release)
                 side_threshold = -18.0 - (glue_db / 2.0)
@@ -163,6 +173,12 @@ class AudioProcessor:
             side = side.reshape(-1, 1)
 
             mid  = self.linear_phase_eq(mid,  air_gain_db=0.0)
+            
+            # --- Mid Channel Mud Cleanup ---
+            b_mud, a_mud = signal.butter(1, [150.0 / (self.sample_rate/2.0), 600.0 / (self.sample_rate/2.0)], btype='bandpass')
+            mud_band = signal.filtfilt(b_mud, a_mud, mid, axis=0)
+            mid = mid - (mud_band * 0.2)
+            
             side = self.linear_phase_eq(side, air_gain_db=air_gain_db)
 
             if stereo_width_db != 0.0:
@@ -170,7 +186,7 @@ class AudioProcessor:
 
             if glue_db > 0.0:
                 mid_threshold  = -12.0 - glue_db
-                mid  = self.compressor_vca(mid,  threshold_db=mid_threshold,  ratio=4.0, attack_ms=15.0, release_ms=120.0)
+                mid  = self.compressor_vca(mid,  threshold_db=mid_threshold,  ratio=4.0, attack_ms=15.0, release_ms=120.0, sidechain_hp_hz=120.0)
                 side_threshold = -18.0 - (glue_db / 2.0)
                 side = self.compressor_vca(side, threshold_db=side_threshold, ratio=1.5, attack_ms=30.0, release_ms=250.0)
 
@@ -420,7 +436,7 @@ class AudioProcessor:
 
     def compressor_vca(self, audio_data: np.ndarray, threshold_db: float = -12.0, 
                        ratio: float = 2.0, attack_ms: float = 10.0, 
-                       release_ms: float = 100.0) -> np.ndarray:
+                       release_ms: float = 100.0, sidechain_hp_hz: float = 0.0) -> np.ndarray:
         """
         A high-fidelity VCA-style compressor with a soft knee.
         Uses a vectorised envelope follower (scipy lfilter) for speed.
@@ -431,8 +447,14 @@ class AudioProcessor:
         att_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (attack_ms  / 1000.0)))
         rel_alpha = 1.0 - np.exp(-1.0 / (self.sample_rate * (release_ms / 1000.0)))
         
+        # Determine sidechain signal for detection
+        detect_sig = audio_data
+        if sidechain_hp_hz > 0.0:
+            b_sc, a_sc = signal.butter(2, sidechain_hp_hz / (self.sample_rate / 2.0), btype='high')
+            detect_sig = signal.filtfilt(b_sc, a_sc, audio_data, axis=0)
+
         # Detect signal level (Rectified)
-        det = np.max(np.abs(audio_data), axis=1) if audio_data.ndim > 1 else np.abs(audio_data).flatten()
+        det = np.max(np.abs(detect_sig), axis=1) if detect_sig.ndim > 1 else np.abs(detect_sig).flatten()
 
         # Vectorised two-stage envelope:
         # Pass 1 — attack  (fast smoothing upward)

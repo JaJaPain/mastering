@@ -60,9 +60,9 @@ class MainView(tk.Tk):
         self.load_btn = ttk.Button(load_btn_frame, text="Load WAV")
         self.load_btn.pack(side=tk.LEFT)
         
-        self.compare_btn = ttk.Button(load_btn_frame, text="Preset Battle ⚔️")
-        self.compare_btn.pack(side=tk.LEFT, padx=(10, 0))
-        ToolTip(self.compare_btn, "Compare up to 4 different mastering presets side-by-side\nwith synced solo-playback.")
+        self.home_btn = ttk.Button(load_btn_frame, text="🏠 Home")
+        self.home_btn.pack(side=tk.LEFT, padx=(10, 0))
+        ToolTip(self.home_btn, "Return to the main landing page")
 
         self.file_label = ttk.Label(load_btn_frame, text="No file loaded", style="Header.TLabel", font=("Segoe UI", 10))
         self.file_label.pack(side=tk.LEFT, padx=10)
