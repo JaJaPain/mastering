@@ -11,7 +11,8 @@
             "glue": 4.0,
             "mono_freq": 150.0,
             "target_lufs": -14.0,
-            "description": "Punchy and aggressive; uses targeted Intelligent clipping for snappy drums and glued center."
+            "description": "Punchy and aggressive; uses targeted Intelligent clipping for snappy drums and glued center.",
+            "parallel_comp": 20.0
         },
         "Alt Metal / Emo": {
             "input_gain": 1.5,
@@ -24,7 +25,8 @@
             "glue": 3.5,
             "mono_freq": 160.0,
             "target_lufs": -15.0,
-            "description": "High-energy with vocal shimmer; balanced multiband grit for thick guitar walls."
+            "description": "High-energy with vocal shimmer; balanced multiband grit for thick guitar walls.",
+            "parallel_comp": 20.0
         },
         "Acoustic / Introspective": {
             "input_gain": 0.0,
@@ -37,7 +39,8 @@
             "glue": 1.0,
             "mono_freq": 120.0,
             "target_lufs": -15.0,
-            "description": "Transparent and dynamic; preserves natural timbre with subtle analog tape warmth."
+            "description": "Transparent and dynamic; preserves natural timbre with subtle analog tape warmth.",
+            "parallel_comp": 10.0
         },
         "Streaming Standard": {
             "input_gain": 1.0,
@@ -50,7 +53,8 @@
             "glue": 2.0,
             "mono_freq": 150.0,
             "target_lufs": -15.0,
-            "description": "The safe choice for YouTube and Spotify; balanced glue and modern spectral clarity."
+            "description": "The safe choice for YouTube and Spotify; balanced glue and modern spectral clarity.",
+            "parallel_comp": 15.0
         },
         "Heavy Metal / Djent": {
             "input_gain": 3.0,
@@ -63,7 +67,8 @@
             "glue": 5.0,
             "mono_freq": 180.0,
             "target_lufs": -13.0,
-            "description": "Maximum weight and density; aggressive Intelligent clipping for a wall-of-sound master."
+            "description": "Maximum weight and density; aggressive Intelligent clipping for a wall-of-sound master.",
+            "parallel_comp": 40.0
         },
         "Pop / Radio": {
             "input_gain": 1.5,
@@ -76,7 +81,8 @@
             "glue": 2.5,
             "mono_freq": 150.0,
             "target_lufs": -14.5,
-            "description": "Polished and bright; wide imaging with high-frequency shimmer and tight low-end glue."
+            "description": "Polished and bright; wide imaging with high-frequency shimmer and tight low-end glue.",
+            "parallel_comp": 25.0
         },
         "Hip-Hop / Trap": {
             "input_gain": 2.5,
@@ -89,7 +95,8 @@
             "glue": 4.5,
             "mono_freq": 180.0,
             "target_lufs": -14.0,
-            "description": "Sub-frequency focus; heavy low-band drive keeps 808s hard while gluing the mix top."
+            "description": "Sub-frequency focus; heavy low-band drive keeps 808s hard while gluing the mix top.",
+            "parallel_comp": 35.0
         },
         "Lo-Fi / Chill": {
             "input_gain": -1.0,
@@ -102,7 +109,8 @@
             "glue": 3.0,
             "mono_freq": 150.0,
             "target_lufs": -15.0,
-            "description": "Warm, analog vibe; heavy mid-range tape saturation with rolled-off highs and vintage glue."
+            "description": "Warm, analog vibe; heavy mid-range tape saturation with rolled-off highs and vintage glue.",
+            "parallel_comp": 20.0
         },
         "EDM / Club": {
             "input_gain": 3.5,
@@ -115,7 +123,8 @@
             "glue": 5.5,
             "mono_freq": 200.0,
             "target_lufs": -12.0,
-            "description": "High-energy club master; aggressive stereo width and maximum spectral density."
+            "description": "High-energy club master; aggressive stereo width and maximum spectral density.",
+            "parallel_comp": 30.0
         },
         "Jazz / Fusion": {
             "input_gain": 0.0,
@@ -128,7 +137,8 @@
             "glue": 1.0,
             "mono_freq": 100.0,
             "target_lufs": -16.0,
-            "description": "Natural and airy; preserves high dynamic range and instrumental nuance."
+            "description": "Natural and airy; preserves high dynamic range and instrumental nuance.",
+            "parallel_comp": 20.0
         },
         "Classical / Orchestral": {
             "input_gain": -2.0,
@@ -141,7 +151,8 @@
             "glue": 0.0,
             "mono_freq": 80.0,
             "target_lufs": -18.0,
-            "description": "Vast soundstage; zero saturation and ultra-transparent gain stages to preserve dynamics."
+            "description": "Vast soundstage; zero saturation and ultra-transparent gain stages to preserve dynamics.",
+            "parallel_comp": 20.0
         },
         "Country / Americana": {
             "input_gain": 1.0,
@@ -154,7 +165,8 @@
             "glue": 2.5,
             "mono_freq": 140.0,
             "target_lufs": -14.5,
-            "description": "Warm mids and clear vocals; analog tape feel for roots and organic instrumentals."
+            "description": "Warm mids and clear vocals; analog tape feel for roots and organic instrumentals.",
+            "parallel_comp": 20.0
         },
         "Blues / Soul": {
             "input_gain": 0.5,
@@ -167,7 +179,8 @@
             "glue": 3.0,
             "mono_freq": 150.0,
             "target_lufs": -15.0,
-            "description": "Rich harmonic saturation; mimics vintage analog console and tape machine glue."
+            "description": "Rich harmonic saturation; mimics vintage analog console and tape machine glue.",
+            "parallel_comp": 20.0
         },
         "Podcast / Spoken Word": {
             "input_gain": 1.5,
@@ -180,7 +193,8 @@
             "glue": 4.0,
             "mono_freq": 120.0,
             "target_lufs": -16.0,
-            "description": "Maximum vocal clarity; heavy center-channel glue for consistent spoken word levels."
+            "description": "Maximum vocal clarity; heavy center-channel glue for consistent spoken word levels.",
+            "parallel_comp": 20.0
         },
         "Synthwave / 80s": {
             "input_gain": 1.5,
@@ -193,7 +207,8 @@
             "glue": 3.5,
             "mono_freq": 150.0,
             "target_lufs": -15.0,
-            "description": "Neon vibes; extreme high-frequency shimmer and retro multiband saturation."
+            "description": "Neon vibes; extreme high-frequency shimmer and retro multiband saturation.",
+            "parallel_comp": 20.0
         },
         "Punk / Grunge": {
             "input_gain": 2.0,
@@ -206,7 +221,8 @@
             "glue": 4.5,
             "mono_freq": 160.0,
             "target_lufs": -14.5,
-            "description": "Distorted and raw; heavy mid-range saturation for aggressive, unpolished energy."
+            "description": "Distorted and raw; heavy mid-range saturation for aggressive, unpolished energy.",
+            "parallel_comp": 20.0
         },
         "Cinematic / Trailer": {
             "input_gain": 4.0,
@@ -219,7 +235,8 @@
             "glue": 5.0,
             "mono_freq": 180.0,
             "target_lufs": -13.0,
-            "description": "Wider than life; maximum imaging and high-impact multiband excitation for huge sweeps."
+            "description": "Wider than life; maximum imaging and high-impact multiband excitation for huge sweeps.",
+            "parallel_comp": 45.0
         },
         "Reggae / Dub": {
             "input_gain": 2.0,
@@ -232,7 +249,8 @@
             "glue": 4.0,
             "mono_freq": 180.0,
             "target_lufs": -15.0,
-            "description": "Heavy sub-bass warmth; smooth, dark tape saturation focused on low-end impact."
+            "description": "Heavy sub-bass warmth; smooth, dark tape saturation focused on low-end impact.",
+            "parallel_comp": 20.0
         },
         "Indie / Dream Pop": {
             "input_gain": 0.5,
@@ -245,7 +263,8 @@
             "glue": 2.5,
             "mono_freq": 140.0,
             "target_lufs": -15.0,
-            "description": "Lush and texture-focused; wide stereo image with moderate, transparent glue."
+            "description": "Lush and texture-focused; wide stereo image with moderate, transparent glue.",
+            "parallel_comp": 25.0
         },
         "Extreme Loudness": {
             "input_gain": 5.0,
@@ -258,7 +277,8 @@
             "glue": 7.0,
             "mono_freq": 250.0,
             "target_lufs": -11.0,
-            "description": "Maximum competitive loudness; utilizes extreme multiband clipping and heavy M/S glue."
+            "description": "Maximum competitive loudness; utilizes extreme multiband clipping and heavy M/S glue.",
+            "parallel_comp": 50.0
         },
         "Melesia E": {
             "target_lufs": -14.5,
@@ -274,7 +294,8 @@
             "input_gain": 8.903234376171026,
             "glue": 2.5,
             "description": "User Custom Preset",
-            "is_custom": true
+            "is_custom": true,
+            "parallel_comp": 20.0
         },
         "ME Studio": {
             "target_lufs": -15.0,
@@ -290,7 +311,8 @@
             "input_gain": 7.085003114217791,
             "glue": 3.0,
             "description": "User Custom Preset",
-            "is_custom": true
+            "is_custom": true,
+            "parallel_comp": 20.0
         }
     }
 }

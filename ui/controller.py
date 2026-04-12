@@ -116,6 +116,7 @@ class UIController:
             self.view.mono_freq_val.config(text=f"{int(float(self.view.mono_freq_slider.get()))} Hz")
             self.view.mono_bypass_var.set(preset_data.get("mono_bypass", False))
             self.view.glue_slider.set(preset_data.get("glue", 2.0))
+            self.view.parallel_slider.set(preset_data.get("parallel_comp", 0.0))
             self.view.lufs_slider.set(preset_data.get("target_lufs", preset_data.get("Target LUFS", -14.0)))
             
             # Unlock Auto-Match once a preset (vibe) is chosen
@@ -152,6 +153,7 @@ class UIController:
                 "mono_bypass": self.view.mono_bypass_var.get(),
                 "input_gain": float(self.view.gain_slider.get()),
                 "glue": float(self.view.glue_slider.get()),
+                "parallel_comp": float(self.view.parallel_slider.get()),
                 "description": "User Custom Preset"
             }
             if preset_manager.save_custom_preset(name, data):
